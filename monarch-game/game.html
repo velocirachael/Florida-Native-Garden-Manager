@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Milkweed — A Monarch's Beginning</title>
+<style>
+  :root{
+    --leaf-dark:#2f5233;
+    --leaf-mid:#4f7942;
+    --leaf-light:#7a9b5c;
+    --stem:#5c6b3a;
+    --cream:#f4e9d8;
+    --monarch-orange:#e8722c;
+    --monarch-black:#2b2320;
+    --sky-dawn:#f7c9a0;
+    --sky-day:#a7d8e8;
+    --storm-dark:#1c1d2e;
+    --lightning:#eef0ff;
+    --egg-glow:#fff7d6;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    background:var(--monarch-black);
+    font-family:'Courier New',monospace;
+    color:var(--cream);
+    overflow:hidden;
+    -webkit-user-select:none;user-select:none;
+  }
+  #wrap{
+    position:relative;
+    width:100%;
+    max-width:640px;
+    margin:0 auto;
+    aspect-ratio:4/3;
+    background:#000;
+    image-rendering:pixelated;
+  }
+  canvas{
+    display:block;
+    width:100%;
+    height:100%;
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+  }
+  #overlay{
+    position:absolute;inset:0;
+    display:flex;align-items:center;justify-content:center;
+    flex-direction:column;
+    text-align:center;
+    padding:16px;
+    pointer-events:none;
+  }
+  #overlay.pos-bottom{
+    align-items:flex-end;
+    justify-content:center;
+    padding-bottom:8%;
+  }
+  #overlay.pos-top{
+    align-items:flex-start;
+    justify-content:center;
+    padding-top:8%;
+  }
+  #overlay.pos-top-left{
+    align-items:flex-start;
+    justify-content:flex-start;
+    text-align:left;
+    padding:10px;
+  }
+  #overlay.pos-top-left .panel-text{
+    max-width:66%;
+    font-size:clamp(11px,2.6vw,15px);
+  }
+  .panel-text{
+    background:rgba(20,16,14,0.72);
+    border:2px solid var(--cream);
+    padding:10px 16px;
+    font-size:clamp(11px,2.4vw,15px);
+    line-height:1.5;
+    letter-spacing:0.5px;
+    max-width:88%;
+    pointer-events:auto;
+  }
+  #skipBtn, #continueBtn{
+    position:absolute;
+    background:var(--monarch-black);
+    color:var(--cream);
+    border:2px solid var(--monarch-orange);
+    font-family:inherit;
+    font-size:11px;
+    padding:6px 10px;
+    cursor:pointer;
+    pointer-events:auto;
+    letter-spacing:1px;
+  }
+  #skipBtn{top:8px;right:8px;}
+  #continueBtn{
+    bottom:14%;left:50%;transform:translateX(-50%);
+    font-size:12px;padding:8px 14px;
+    display:none;
+  }
+  #continueBtn.show{display:block;}
+  #hud{
+    position:absolute;top:6px;left:6px;
+    display:flex;gap:3px;
+    pointer-events:none;
+  }
+  .munch{
+    width:16px;height:16px;
+    background:transparent;
+    position:relative;
+  }
+  .munch svg{width:100%;height:100%;display:block;}
+  #hint{
+    position:absolute;
+    bottom:6px;left:0;right:0;
+    text-align:center;
+    font-size:10px;
+    color:var(--cream);
+    text-shadow:1px 1px 0 #000;
+    pointer-events:none;
+    letter-spacing:0.5px;
+  }
+  #controls{
+    position:absolute;
+    bottom:6px;right:6px;
+    display:grid;
+    grid-template-columns:28px 28px 28px;
+    grid-template-rows:28px 28px 28px;
+    gap:2px;
+    opacity:0.85;
+  }
+  #controls button{
+    background:rgba(20,16,14,0.6);
+    border:1px solid var(--cream);
+    color:var(--cream);
+    font-size:12px;
+    cursor:pointer;
+  }
+  #eatBtn, #silkBtn{
+    position:absolute;
+    bottom:6px;
+    width:52px;height:36px;
+    background:rgba(232,114,44,0.85);
+    border:1px solid var(--cream);
+    color:var(--monarch-black);
+    font-weight:bold;
+    font-size:10px;
+    cursor:pointer;
+  }
+  #eatBtn{left:6px;}
+  #silkBtn{left:64px;background:rgba(122,155,92,0.85);}
+  #toast{
+    position:absolute;
+    top:34px;left:50%;transform:translateX(-50%);
+    background:rgba(20,16,14,0.85);
+    border:1px solid var(--monarch-orange);
+    padding:5px 10px;
+    font-size:10px;
+    max-width:80%;
+    text-align:center;
+    opacity:0;
+    transition:opacity 0.3s;
+    pointer-events:none;
+  }
+  #toast.show{opacity:1;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="160" height="120"></canvas>
+  <div id="hud"></div>
+  <div id="toast"></div>
+  <div id="hint"></div>
+  <div id="overlay">
+    <div class="panel-text" id="panelText" style="display:none;"></div>
+  </div>
+  <button id="skipBtn">SKIP INTRO ▶</button>
+  <button id="continueBtn">CONTINUE ▶</button>
+  <div id="controls">
+    <div></div><button id="btnUp">▲</button><div></div>
+    <button id="btnLeft">◀</button><div></div><button id="btnRight">▶</button>
+    <div></div><button id="btnDown">▼</button><div></div>
+  </div>
+  <button id="eatBtn">EAT<br>(space)</button>
+  <button id="silkBtn">SPIN SILK<br>(S)</button>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const W = canvas.width, H = canvas.height;
+const CELL = 4;
+const COLS = W / CELL, ROWS = H / CELL;
+// body: 1 cell wide x 3 cells tall (instar 1). Buffer = 1-cell border -> 3x5 no-eat zone.
+const BODY_W = 1, BODY_H = 3;
+
+const overlay = document.getElementById('overlay');
+const panelText = document.getElementById('panelText');
+const skipBtn = document.getElementById('skipBtn');
+const continueBtn = document.getElementById('continueBtn');
+const hud = document.getElementById('hud');
+const hint = document.getElementById('hint');
+const toast = document.getElementById('toast');
+const eatBtn = document.getElementById('eatBtn');
+const silkBtn = document.getElementById('silkBtn');
+const controlsEl = document.getElementById('controls');
+
+function setGameplayControlsVisible(visible){
+  const v = visible ? 'block' : 'none';
+  eatBtn.style.display = v;
+  silkBtn.style.display = v;
+  controlsEl.style.display = visible ? 'grid' : 'none';
+}
+setGameplayControlsVisible(false); // hidden until Act 0 actually starts
+
+let state = 'comic'; // comic -> act0 -> storm -> morning -> instar2wake
+let comicIndex = 0;
+let frame = 0;
+
+function showToast(msg, ms=2200){
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(()=>toast.classList.remove('show'), ms);
+}
+
+/* ---------- pixel helpers ---------- */
+function px(x,y,w,h,color){
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x), Math.round(y), w, h);
+}
+function clear(color){ px(0,0,W,H,color); }
+
+/* ---------- MUNCH HUD ---------- */
+const TOTAL_MUNCH = 5;
+let munchFilled = 1; // egg gift from mother
+
+function leafletSVG(filled){
+  const fillColor = filled ? '#5f9a44' : 'transparent';
+  const veinColor = filled ? 'rgba(244,233,216,0.7)' : 'transparent';
+  return `<svg viewBox="0 0 16 16">
+    <path d="M8 1 C 3 3, 1 8, 8 15 C 15 8, 13 3, 8 1 Z"
+      fill="${fillColor}" stroke="#f4e9d8" stroke-width="1.4"/>
+    <path d="M8 3 L 8 13" stroke="${veinColor}" stroke-width="0.8"/>
+  </svg>`;
+}
+function renderHUD(){
+  hud.innerHTML = '';
+  for(let i=0;i<TOTAL_MUNCH;i++){
+    const d = document.createElement('div');
+    d.className='munch';
+    d.innerHTML = leafletSVG(i < munchFilled);
+    hud.appendChild(d);
+  }
+}
+renderHUD();
+
+/* =========================================================
+   COMIC INTRO — broken into short beats so text never sits
+   on top of the art it's describing. Each beat is a small
+   step forward in the action, not a whole scene at once.
+   ========================================================= */
+const comicPanels = [
+  { draw: drawBeatEstablish,   text: "High in a milkweed patch..." },
+  { draw: drawBeatButterflyIn, text: "...a mother monarch settles in." },
+  { draw: drawBeatPerched,     text: "On a leaf, she rests." },
+  { draw: drawBeatSpark,       text: "A single spark of life leaves her..." },
+  { draw: drawBeatEggAppear,   text: "...and becomes a single egg." },
+  { draw: drawBeatEggGlow,     text: "Warmed by the sun, three quiet days pass." },
+  { draw: drawBeatEggDark,     text: "A dark spot appears. Someone is waiting inside." },
+  { draw: drawBeatCrack,       text: "Crack..." },
+  { draw: drawBeatHatch,       text: "Hungry. Alive." }
+];
+
+// shared background used by the mother/egg-laying beats (leaf sits upper-mid,
+// leaving the bottom third clear for text)
+function drawSkyLeafUpper(){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, '#f7c9a0');
+  g.addColorStop(1, '#fce8cf');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  px(120,14,14,14,'#ffe08a'); // sun
+  px(78,40,6,80,'#5c6b3a');   // stem
+  drawLeafBlob(50,50,70,40,'#4f7942');
+}
+// shared background used by the egg-development beats (leaf sits lower,
+// leaving the top third clear for text)
+function drawSkyLeafLower(){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#a7d8e8'); g.addColorStop(1,'#f7c9a0');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  drawLeafBlob(20,60,120,50,'#4f7942');
+}
+
+function drawBeatEstablish(t){
+  drawSkyLeafUpper();
+}
+function drawBeatButterflyIn(t){
+  drawSkyLeafUpper();
+  const p = Math.min(1, t/70);
+  const bx = -10 + (70-(-10))*p;
+  const bob = Math.sin(t/8)*2;
+  drawButterfly(bx, 44+bob, '#e8722c');
+  drawMotherMunchRow(15, 6);
+}
+function drawBeatPerched(t){
+  drawSkyLeafUpper();
+  const bob = Math.sin(t/20)*1;
+  drawButterfly(70, 44+bob, '#e8722c');
+  drawMotherMunchRow(15, 6);
+}
+function drawBeatSpark(t){
+  drawSkyLeafUpper();
+  drawButterfly(70, 44, '#e8722c');
+  const p = Math.min(1, t/150);
+  const sx = 70 + (84-70)*p;
+  const sy = 50 + (58-50)*p;
+  px(sx, sy, 2,2, '#fff7d6');
+  drawMotherMunchRow(15, 6);
+}
+function drawBeatEggAppear(t){
+  drawSkyLeafUpper();
+  drawButterfly(70, 44, '#e8722c');
+  px(84,58,3,3,'#fff7d6');
+  const flashP = Math.min(1, t/40);
+  ctx.fillStyle = `rgba(122,155,92,${0.5*(1-flashP)})`;
+  ctx.beginPath(); ctx.arc(85,59,6,0,Math.PI*2); ctx.fill();
+
+  // one filled container pulses, then is gone for good — it became the egg's
+  if(flashP < 1){
+    const pulseAlpha = 0.35 + 0.65*Math.abs(Math.sin(t/3));
+    drawMotherMunchRow(15, 6, 5, pulseAlpha);
+  } else {
+    drawMotherMunchRow(14, 5);
+  }
+}
+function drawBeatEggGlow(t){
+  drawSkyLeafLower();
+  const glow = 4 + Math.sin(t/28)*2;
+  ctx.fillStyle='rgba(255,247,214,0.5)';
+  ctx.beginPath();
+  ctx.arc(80,64,7+glow,0,Math.PI*2);
+  ctx.fill();
+  px(76,60,8,8,'#fff7d6');
+}
+function drawBeatEggDark(t){
+  drawSkyLeafLower();
+  px(76,60,8,8,'#fff7d6');
+  px(78,63,4,4,'#2b2320'); // dark spot = larva head visible
+}
+function drawBeatCrack(t){
+  drawSkyLeafLower();
+  px(76,60,8,8,'#fff7d6');
+  px(78,63,4,4,'#2b2320');
+  ctx.strokeStyle='#2b2320'; ctx.lineWidth=0.6;
+  const shake = Math.sin(t/3)*0.4;
+  ctx.beginPath(); ctx.moveTo(76,62+shake); ctx.lineTo(80,66-shake); ctx.stroke();
+}
+function drawBeatHatch(t){
+  drawSkyLeafLower();
+  px(76,62,10,5,'#4f7942');
+  px(78,60,2,2,'#2b2320');
+  px(83,60,2,2,'#2b2320');
+}
+
+function drawLeafBlob(x,y,w,h,color){
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2);
+  ctx.fill();
+  // vein
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, y+h/2);
+  ctx.lineTo(x+w, y+h/2);
+  ctx.stroke();
+}
+function drawButterfly(x,y,color){
+  px(x-6,y-4,6,8,color);
+  px(x+2,y-4,6,8,color);
+  px(x-1,y-3,3,7,'#2b2320');
+  px(x-5,y-2,3,3,'#2b2320');
+  px(x+3,y-2,3,3,'#2b2320');
+}
+
+// mother's own MUNCH supply — small leaf-shaped slots along the bottom edge
+function drawMunchSlot(x,y,filled,alpha){
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = filled ? '#5f9a44' : 'transparent';
+  ctx.strokeStyle = '#f4e9d8';
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.ellipse(x+3, y+3, 2.6, 3.4, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+function drawMotherMunchRow(total, filled, pulseIndex, pulseAlpha){
+  const slotW = 7;
+  const startX = (W - total*slotW)/2;
+  const y = H-11;
+  for(let i=0;i<total;i++){
+    const isPulse = (i===pulseIndex);
+    drawMunchSlot(startX+i*slotW, y, i<filled, isPulse ? pulseAlpha : 1);
+  }
+}
+
+function updateComic(){
+  frame++;
+  const p = comicPanels[comicIndex];
+  p.draw(frame);
+  overlay.className = 'pos-top-left';
+  panelText.style.display = 'block';
+  panelText.textContent = p.text;
+  hud.style.display = 'none';
+  hint.textContent = 'tap / click to continue';
+}
+
+canvas.addEventListener('click', ()=>{
+  if(state==='comic'){
+    comicIndex++;
+    frame = 0;
+    if(comicIndex >= comicPanels.length){
+      startAct0();
+    }
+  }
+});
+skipBtn.addEventListener('click', ()=>{
+  if(state==='comic') startAct0();
+});
+
+/* =========================================================
+   ACT 0 — INSTAR 1
+   ========================================================= */
+let player, others, eatenCells, bridgedCells, munchActions, shadowZone, learnedSilk, silkPromptShown, silkVisualCells;
+let instructionsShown, shadowUrgeActive, act0Frame;
+let leafSpeckles = null;
+
+function buildLeafTexture(){
+  // seeded-ish pseudo-random speckle field, computed once so the leaf
+  // has a mottled, illustrated texture instead of a flat fill
+  leafSpeckles = [];
+  let seed = 1337;
+  const rnd = ()=>{ seed = (seed*9301+49297) % 233280; return seed/233280; };
+  for(let i=0;i<140;i++){
+    leafSpeckles.push({
+      x: rnd()*W, y: rnd()*H,
+      r: 1 + rnd()*1.6,
+      tone: rnd() < 0.5 ? 'dark' : 'light'
+    });
+  }
+}
+
+function startAct0(){
+  state = 'act0';
+  overlay.style.display='none';
+  skipBtn.style.display='none';
+  hud.style.display='flex';
+  renderHUD();
+  setGameplayControlsVisible(true);
+  if(!leafSpeckles) buildLeafTexture();
+
+  // anchors are the TOP cell of a 1-wide x 3-tall body
+  player = {gx:20, gy:14};
+  others = [
+    {gx:10,gy:8}, {gx:28,gy:10}, {gx:16,gy:24}, // original three
+    {gx:34,gy:22}, {gx:5,gy:18}                 // two new
+  ];
+  eatenCells = new Set(); // "gx,gy" keys — visual: which cells are chewed away
+  bridgedCells = new Set(); // "gx,gy" keys — holes silk has bridged, safe to cross
+  munchActions = 0;       // progress counter — one per successful munch
+  shadowZone = {gx:4, gy:4, w:6, h:6};
+  learnedSilk = false;
+  silkPromptShown = false;
+  silkVisualCells = [];
+  instructionsShown = false;
+  shadowUrgeActive = false;
+  shadowHintShown = false;
+  act0Frame = 0;
+
+  hint.textContent = 'WASD / arrows: move    SPACE: eat anywhere';
+  requestAnimationFrame(gameLoop);
+}
+
+// bounding box of a 1x3 body anchored at (gx,gy)
+function bodyBox(a){ return {x0:a.gx, y0:a.gy, x1:a.gx+BODY_W-1, y1:a.gy+BODY_H-1}; }
+// 1-cell border around the body -> 3 wide x 5 tall no-eat zone
+function bufferBox(a){ const b=bodyBox(a); return {x0:b.x0-1,y0:b.y0-1,x1:b.x1+1,y1:b.y1+1}; }
+function inBox(gx,gy,box){ return gx>=box.x0 && gx<=box.x1 && gy>=box.y0 && gy<=box.y1; }
+
+function overlapsBody(gx,gy,a){ return inBox(gx,gy,bodyBox(a)); }
+
+function tryMove(dx,dy){
+  if(state!=='act0') return;
+  const nx = Math.min(COLS-BODY_W, Math.max(0, player.gx+dx));
+  const ny = Math.min(ROWS-BODY_H, Math.max(0, player.gy+dy));
+  const trial = {gx:nx, gy:ny};
+  const tb = bodyBox(trial);
+  const blockedByOther = others.some(o=>{
+    const ob = bodyBox(o);
+    return !(tb.x1<ob.x0 || tb.x0>ob.x1 || tb.y1<ob.y0 || tb.y0>ob.y1);
+  });
+  // the head (leading/top segment) can always poke into a hole; only the
+  // trailing body segments below it need a silk bridge to cross one
+  let blockedByHole = false;
+  for(let gx=tb.x0; gx<=tb.x1 && !blockedByHole; gx++){
+    for(let gy=tb.y0+1; gy<=tb.y1; gy++){
+      const key = gx+','+gy;
+      if(eatenCells.has(key) && !bridgedCells.has(key)){ blockedByHole = true; break; }
+    }
+  }
+  if(blockedByHole && (dx!==0||dy!==0) && !(nx===player.gx && ny===player.gy)){
+    showToast('A gap in the leaf — spin silk nearby to bridge it.', 1800);
+  }
+  if(!blockedByOther && !blockedByHole){
+    player.gx = nx; player.gy = ny;
+  }
+  checkShadow();
+}
+
+function tryEat(){
+  if(state!=='act0') return;
+  // bite center is the head cell (top of the body)
+  const hx = player.gx, hy = player.gy;
+  const headKey = hx+','+hy;
+
+  const tooClose = others.some(o => inBox(hx,hy, bufferBox(o)));
+  if(tooClose){
+    showToast('Too close to another caterpillar — a 1-cell border keeps you out.');
+    return;
+  }
+  if(eatenCells.has(headKey)){
+    showToast('Already munched down to nothing here. Move to a fresh spot.');
+    return;
+  }
+
+  // bite a 3-wide x 2-tall patch: first row on the head, second row above
+  // it — not below, so the hole doesn't sit under the body's lower segments
+  for(let dx=-1; dx<=1; dx++){
+    for(let dy=-1; dy<=0; dy++){
+      const gx = hx+dx, gy = hy+dy;
+      if(gx<0 || gy<0 || gx>=COLS || gy>=ROWS) continue;
+      if(others.some(o => overlapsBody(gx,gy,o))) continue; // don't dig under a caterpillar
+      eatenCells.add(gx+','+gy);
+    }
+  }
+
+  munchActions++;
+
+  if(munchActions <= 4){
+    munchFilled = Math.min(TOTAL_MUNCH, 1 + munchActions);
+    renderHUD();
+  }
+
+  if(munchActions === 2 && !silkPromptShown){
+    silkPromptShown = true;
+    showToast('New instinct stirs... press S to spin silk.', 3200);
+  }
+
+  if(munchActions === 5){
+    showToast('Full at last. But something pulls you toward the shadows...', 3200);
+    shadowUrgeActive = true;
+  }
+}
+
+function trySilk(){
+  if(!silkPromptShown) return;
+  learnedSilk = true;
+  const exists = silkVisualCells.some(c=>c.gx===player.gx && c.gy===player.gy);
+  if(!exists) silkVisualCells.push({gx:player.gx, gy:player.gy});
+
+  // bridge any holes touching the body or its immediate 1-cell border
+  const b = bufferBox(player);
+  let bridgedAny = false;
+  for(let gx=b.x0; gx<=b.x1; gx++){
+    for(let gy=b.y0; gy<=b.y1; gy++){
+      const key = gx+','+gy;
+      if(eatenCells.has(key) && !bridgedCells.has(key)){
+        bridgedCells.add(key);
+        bridgedAny = true;
+      }
+    }
+  }
+
+  if(shadowUrgeActive && playerInShadowZone()){
+    showToast('Silk spun in the dark. Safe, just in time.', 1800);
+    startStorm();
+  } else if(bridgedAny){
+    showToast('Silk bridge spun across the gap.', 1800);
+  } else {
+    showToast('Silk spun. It will keep you safe.', 1600);
+  }
+}
+
+function playerInShadowZone(){
+  return player.gx >= shadowZone.gx && player.gx < shadowZone.gx+shadowZone.w &&
+         player.gy >= shadowZone.gy && player.gy < shadowZone.gy+shadowZone.h;
+}
+
+let shadowHintShown = false;
+function checkShadow(){
+  if(!shadowUrgeActive) return;
+  if(playerInShadowZone() && !shadowHintShown){
+    shadowHintShown = true;
+    showToast('The shadows feel safe... but instinct says spin silk here.', 3000);
+  }
+}
+
+/* ---- rendering act0 ---- */
+function drawAct0(){
+  // base leaf: radial gradient, light center to darker edge
+  const grad = ctx.createRadialGradient(W/2,H/2,10, W/2,H/2, W*0.75);
+  grad.addColorStop(0, '#5f8a48');
+  grad.addColorStop(0.55, '#4f7942');
+  grad.addColorStop(1, '#2f5233');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+
+  // speckle texture (mottling)
+  leafSpeckles.forEach(s=>{
+    ctx.fillStyle = s.tone==='dark' ? 'rgba(20,40,15,0.18)' : 'rgba(200,230,170,0.12)';
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+  });
+
+  // veins: central rib + side veins
+  ctx.strokeStyle='rgba(20,40,15,0.28)';
+  ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(W/2,0); ctx.lineTo(W/2,H); ctx.stroke();
+  for(let y=8; y<H; y+=16){
+    ctx.beginPath(); ctx.moveTo(W/2,y); ctx.lineTo(W/2-24,y-6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W/2,y); ctx.lineTo(W/2+24,y-6); ctx.stroke();
+  }
+
+  // shadow zone
+  const shadowPulse = shadowUrgeActive ? (0.30 + 0.15*Math.sin(act0Frame/10)) : 0.20;
+  ctx.fillStyle = `rgba(10,10,20,${shadowPulse})`;
+  ctx.fillRect(shadowZone.gx*CELL, shadowZone.gy*CELL, shadowZone.w*CELL, shadowZone.h*CELL);
+  if(shadowUrgeActive){
+    ctx.strokeStyle = 'rgba(244,233,216,0.6)';
+    ctx.strokeRect(shadowZone.gx*CELL+0.5, shadowZone.gy*CELL+0.5, shadowZone.w*CELL-1, shadowZone.h*CELL-1);
+  }
+
+  // eaten cells — hidden while a caterpillar's body still covers them,
+  // revealed once they move off. Bridged holes show silk planks over the gap.
+  eatenCells.forEach(key=>{
+    const [gx,gy] = key.split(',').map(Number);
+    const coveredByPlayer = overlapsBody(gx,gy,player);
+    const coveredByOther = others.some(o=>overlapsBody(gx,gy,o));
+    if(coveredByPlayer || coveredByOther) return;
+
+    const x = gx*CELL, y = gy*CELL;
+    px(x,y,CELL,CELL,'#1c1d2e');
+    ctx.strokeStyle='rgba(0,0,0,0.4)';
+    ctx.lineWidth=0.5;
+    ctx.strokeRect(x+0.5,y+0.5,CELL-1,CELL-1);
+
+    if(bridgedCells.has(key)){
+      ctx.strokeStyle='rgba(244,233,216,0.8)';
+      ctx.lineWidth=0.7;
+      ctx.beginPath(); ctx.moveTo(x,y+1); ctx.lineTo(x+CELL,y+1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x,y+CELL-1); ctx.lineTo(x+CELL,y+CELL-1); ctx.stroke();
+    }
+  });
+
+  // silk
+  silkVisualCells.forEach(c=>{
+    ctx.strokeStyle='rgba(244,233,216,0.55)';
+    ctx.lineWidth=0.6;
+    ctx.strokeRect(c.gx*CELL-2, c.gy*CELL-2, BODY_W*CELL+4, BODY_H*CELL+4);
+  });
+
+  // other caterpillars
+  others.forEach(o=>drawCaterpillar(o.gx,o.gy,'#8ba86a','#5f7a48'));
+
+  // player
+  drawCaterpillar(player.gx, player.gy, '#f0954f','#c95f1e');
+}
+
+// 1-cell wide x 3-cell tall segmented body, shaded for an illustrated look
+function drawCaterpillar(gx,gy,baseColor,shadeColor){
+  const x = gx*CELL, y = gy*CELL;
+  const w = BODY_W*CELL, h = BODY_H*CELL;
+
+  // outline
+  px(x-0.5,y-0.5,w+1,h+1,'#1c1d2e');
+
+  for(let seg=0; seg<BODY_H; seg++){
+    const sy = y + seg*CELL;
+    const alt = seg % 2 === 0;
+    px(x, sy, w, CELL, alt ? baseColor : shadeColor);
+    // highlight sliver
+    px(x, sy, 1, CELL, 'rgba(255,255,255,0.25)');
+    // shadow sliver
+    px(x+w-1, sy, 1, CELL, 'rgba(0,0,0,0.22)');
+    // little nub legs on the lower two segments
+    if(seg>0){
+      px(x-1, sy+CELL-1, 1,1, '#2b2320');
+      px(x+w, sy+CELL-1, 1,1, '#2b2320');
+    }
+  }
+  // eyes on the head (top segment)
+  px(x, y, 1,1, '#1c1d2e');
+}
+
+/* ---------- STORM CUTSCENE ---------- */
+let stormFrame, flashTimes;
+function startStorm(){
+  state = 'storm';
+  overlay.className = '';
+  panelText.style.display = 'none';
+  hud.style.display='none';
+  hint.textContent='';
+  setGameplayControlsVisible(false);
+  stormFrame = 0;
+  // irregular, spaced-out flashes for a slower, more dramatic build
+  flashTimes = [20,21,22,55,56,95,96,97,140,141,190,191,192];
+}
+function drawStorm(){
+  clear('#1c1d2e');
+  // rain streaks — slightly heavier for drama
+  ctx.strokeStyle='rgba(167,216,232,0.32)';
+  for(let i=0;i<26;i++){
+    const rx = (i*11 + (stormFrame*2.4))%W;
+    const ry = (i*7 + stormFrame*4)%H;
+    ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(rx-3,ry+9); ctx.stroke();
+  }
+  if(flashTimes.includes(stormFrame)){
+    // brief jolt: white flash with a small screen-shake feel via offset re-flash
+    clear('#eef0ff');
+  }
+  stormFrame++;
+  if(stormFrame===210){
+    overlay.className = 'pos-top-left';
+    panelText.style.display='block';
+    panelText.textContent = 'The storm rages through the night.';
+    overlay.style.display='flex';
+  }
+  if(stormFrame===370){
+    startMorning();
+  }
+}
+
+/* ---------- MORNING SAFE SCENE ---------- */
+function startMorning(){
+  state='morning';
+  overlay.className = 'pos-top-left';
+  overlay.style.display='flex';
+  panelText.style.display='block';
+  panelText.textContent = 'Morning. Wrapped in silk and folded leaves, you are safe.';
+  continueBtn.classList.add('show');
+}
+function drawMorning(t){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#a7d8e8'); g.addColorStop(1,'#f7c9a0');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  px(122,10,12,12,'#ffe08a'); // sun
+  drawLeafBlob(30,50,110,60,'#4f7942');
+  // curled apex leaf shelter
+  ctx.fillStyle='#3d5a30';
+  ctx.beginPath();
+  ctx.ellipse(80,72,22,14,0,0,Math.PI*2);
+  ctx.fill();
+  // silk shimmer
+  ctx.strokeStyle='rgba(244,233,216,0.5)';
+  ctx.lineWidth=0.5;
+  for(let i=0;i<4;i++){
+    ctx.beginPath();
+    ctx.ellipse(80,72,10+i*3,6+i*2,0,0,Math.PI*2);
+    ctx.stroke();
+  }
+  // tiny sleeping caterpillar
+  px(76,70,10,4,'#e8722c');
+}
+
+continueBtn.addEventListener('click', ()=>{
+  if(state==='morning'){
+    startInstar2Wake();
+  }
+});
+
+/* ---------- INSTAR 2 WAKE (build stops here) ---------- */
+function startInstar2Wake(){
+  state='instar2wake';
+  continueBtn.classList.remove('show');
+  panelText.textContent = 'HUNGRY. Instar 2 begins... (more to come)';
+}
+function drawInstar2Wake(t){
+  clear('#f7c9a0');
+  px(122,10,12,12,'#ffe08a');
+  drawLeafBlob(20,50,120,60,'#3d5a30'); // much more munched leaf, darker/sparser
+  // slightly bigger caterpillar, stirring
+  const bob = Math.sin(t/8)*1;
+  px(70,64+bob,16,6,'#e8722c');
+  px(70,62+bob,3,3,'#2b2320');
+  px(83,62+bob,3,3,'#2b2320');
+}
+
+/* =========================================================
+   MAIN LOOP
+   ========================================================= */
+function gameLoop(){
+  if(state==='comic'){
+    updateComic();
+  } else if(state==='act0'){
+    act0Frame++;
+    drawAct0();
+  } else if(state==='storm'){
+    drawStorm();
+  } else if(state==='morning'){
+    drawMorning(act0Frame++);
+  } else if(state==='instar2wake'){
+    drawInstar2Wake(act0Frame++);
+  }
+  requestAnimationFrame(gameLoop);
+}
+
+/* ---------- input ---------- */
+window.addEventListener('keydown', (e)=>{
+  switch(e.key){
+    case 'ArrowUp': case 'w': case 'W': tryMove(0,-1); break;
+    case 'ArrowDown': tryMove(0,1); break;
+    case 'ArrowLeft': case 'a': case 'A': tryMove(-1,0); break;
+    case 'ArrowRight': case 'd': case 'D': tryMove(1,0); break;
+    case ' ': e.preventDefault(); tryEat(); break;
+    case 's': case 'S': trySilk(); break;
+  }
+});
+
+document.getElementById('btnUp').addEventListener('click', ()=>tryMove(0,-1));
+document.getElementById('btnDown').addEventListener('click', ()=>tryMove(0,1));
+document.getElementById('btnLeft').addEventListener('click', ()=>tryMove(-1,0));
+document.getElementById('btnRight').addEventListener('click', ()=>tryMove(1,0));
+eatBtn.addEventListener('click', tryEat);
+silkBtn.addEventListener('click', trySilk);
+
+/* ---------- boot ---------- */
+skipBtn.style.display='block';
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
