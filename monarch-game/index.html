@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Milkweed — A Monarch's Beginning</title>
+<meta name="description" content="An interactive pixel-art journey through a monarch butterfly's earliest days — from egg to caterpillar. Part of the Florida Native Garden Manager project.">
+<style>
+  :root{
+    --leaf-dark:#2f5233;
+    --leaf-mid:#4f7942;
+    --leaf-light:#7a9b5c;
+    --cream:#f4e9d8;
+    --monarch-orange:#e8722c;
+    --monarch-black:#2b2320;
+    --sky-dawn:#f7c9a0;
+    --sky-day:#a7d8e8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{
+    min-height:100%;
+    font-family:'Courier New',monospace;
+    color:var(--cream);
+    background:
+      radial-gradient(ellipse at 70% 15%, rgba(255,224,138,0.25), transparent 45%),
+      linear-gradient(180deg, var(--sky-day) 0%, var(--sky-dawn) 45%, var(--leaf-dark) 100%);
+    background-attachment:fixed;
+  }
+  .wrap{
+    max-width:720px;
+    margin:0 auto;
+    padding:48px 24px 80px;
+  }
+  header{
+    text-align:center;
+    margin-bottom:36px;
+  }
+  .eyebrow{
+    display:inline-block;
+    font-size:11px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    background:rgba(43,35,32,0.55);
+    border:1px solid var(--monarch-orange);
+    padding:5px 12px;
+    border-radius:2px;
+    margin-bottom:18px;
+    color:var(--cream);
+  }
+  h1{
+    font-size:clamp(28px,6vw,44px);
+    line-height:1.15;
+    color:var(--monarch-black);
+    text-shadow:1px 1px 0 rgba(255,255,255,0.25);
+    margin-bottom:10px;
+    letter-spacing:0.5px;
+  }
+  .subtitle{
+    font-size:15px;
+    color:var(--monarch-black);
+    opacity:0.85;
+    max-width:520px;
+    margin:0 auto;
+    line-height:1.6;
+  }
+
+  .scene{
+    width:100%;
+    aspect-ratio:16/7;
+    max-width:600px;
+    margin:32px auto;
+    border:3px solid var(--monarch-black);
+    box-shadow:0 6px 0 rgba(0,0,0,0.25);
+    border-radius:2px;
+    overflow:hidden;
+    image-rendering:pixelated;
+  }
+  .scene svg{display:block;width:100%;height:100%;}
+
+  .panel{
+    background:rgba(20,16,14,0.72);
+    border:2px solid var(--cream);
+    padding:22px 24px;
+    border-radius:2px;
+    margin-bottom:22px;
+  }
+  .panel h2{
+    font-size:16px;
+    letter-spacing:1px;
+    color:var(--monarch-orange);
+    margin-bottom:10px;
+    text-transform:uppercase;
+  }
+  .panel p{
+    font-size:14px;
+    line-height:1.7;
+    margin-bottom:10px;
+  }
+  .panel p:last-child{margin-bottom:0;}
+
+  .beats{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(140px,1fr));
+    gap:10px;
+    margin-top:16px;
+  }
+  .beat{
+    background:rgba(244,233,216,0.08);
+    border:1px solid rgba(244,233,216,0.35);
+    padding:10px 12px;
+    font-size:12px;
+    line-height:1.5;
+  }
+  .beat b{
+    display:block;
+    color:var(--monarch-orange);
+    font-size:11px;
+    letter-spacing:0.5px;
+    margin-bottom:2px;
+  }
+
+  .cta{
+    text-align:center;
+    margin:36px 0 8px;
+  }
+  .play-btn{
+    display:inline-block;
+    background:var(--monarch-orange);
+    color:var(--monarch-black);
+    font-family:inherit;
+    font-weight:bold;
+    font-size:16px;
+    letter-spacing:1px;
+    padding:16px 40px;
+    text-decoration:none;
+    border:2px solid var(--monarch-black);
+    border-radius:2px;
+    box-shadow:0 4px 0 var(--monarch-black);
+    transition:transform 0.1s;
+  }
+  .play-btn:hover{transform:translateY(-2px);}
+  .play-btn:active{transform:translateY(2px); box-shadow:0 2px 0 var(--monarch-black);}
+  .cta small{
+    display:block;
+    margin-top:10px;
+    color:var(--monarch-black);
+    opacity:0.7;
+    font-size:11px;
+  }
+
+  footer{
+    text-align:center;
+    margin-top:56px;
+    font-size:11px;
+    color:var(--cream);
+    opacity:0.6;
+    letter-spacing:0.5px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">Florida Native Garden Manager</span>
+    <h1>Milkweed<br>A Monarch's Beginning</h1>
+    <p class="subtitle">An interactive pixel-art story of a monarch butterfly's first days —
+    egg to caterpillar, told the way it actually happens on a milkweed leaf.</p>
+  </header>
+
+  <div class="scene">
+    <svg viewBox="0 0 320 140" xmlns="http://www.w3.org/2000/svg">
+      <rect width="320" height="140" fill="#f7c9a0"/>
+      <circle cx="270" cy="34" r="16" fill="#ffe08a"/>
+      <ellipse cx="150" cy="95" rx="110" ry="42" fill="#4f7942"/>
+      <ellipse cx="150" cy="95" rx="110" ry="42" fill="none" stroke="#2f5233" stroke-width="1" opacity="0.4"/>
+      <g>
+        <rect x="126" y="58" width="12" height="16" fill="#e8722c"/>
+        <rect x="140" y="58" width="12" height="16" fill="#e8722c"/>
+        <rect x="129" y="60" width="6" height="14" fill="#2b2320"/>
+        <rect x="143" y="60" width="6" height="14" fill="#2b2320"/>
+      </g>
+      <rect x="150" y="88" width="7" height="7" fill="#fff7d6"/>
+      <ellipse cx="153" cy="91" rx="9" ry="9" fill="#fff7d6" opacity="0.35"/>
+    </svg>
+  </div>
+
+  <div class="panel">
+    <h2>What this is</h2>
+    <p>A short, browser-based comic-and-game hybrid built for this garden project. It follows a
+    single monarch egg from the moment its mother lays it, through hatching, and into a
+    caterpillar's first hungry, dangerous days on the milkweed — instinct, shelter, and the
+    real biology of what "instar 1" actually looks like.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Inside the story</h2>
+    <div class="beats">
+      <div class="beat"><b>Comic intro</b>A mother monarch lays an egg and passes on the first spark of life.</div>
+      <div class="beat"><b>Hatch</b>Three quiet days, then — hungry, alive.</div>
+      <div class="beat"><b>Act 0</b>Move, munch, and learn the caterpillar's first instincts.</div>
+      <div class="beat"><b>Storm</b>Instinct says: find the shadows, spin silk, stay safe.</div>
+      <div class="beat"><b>Morning</b>Safe till the next hungry stretch begins.</div>
+    </div>
+  </div>
+
+  <div class="cta">
+    <a class="play-btn" href="game.html">Play the Game ▶</a>
+    <small>Works in any browser · no download needed</small>
+  </div>
+
+  <footer>
+    Part of the Florida Native Garden Manager project — a butterfly garden journal &amp; ecosystem tracker.
+  </footer>
+
+</div>
+</body>
+</html>
