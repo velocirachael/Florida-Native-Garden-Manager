@@ -840,7 +840,7 @@ function drawInstar2Wake(t){
    munch instead of two. Other instars share the plant.
    ========================================================= */
 const P1_H = 4; // instar 2 body: 1 cell wide x 4 tall
-let p1, others1, eaten1, region1, mite, mites1;
+let p1, others1, eaten1, region1, mite, mites1, mite2Spawned;
 let act1Frame, budNoteShown, shakeWiggle;
 
 function inEllipse(gx,gy,cx,cy,rx,ry){
@@ -888,12 +888,13 @@ function startAct1(){
   ];
   eaten1 = new Set();
   mite = null;
-  // exactly two clover mites, visible on the plant, hunting slowly —
-  // watch the red specks and keep your distance, or shake fast
+  // exactly two clover mites, each bound to a leaf — never the buds.
+  // #1 lurks on your starting leaf; #2 stirs when you reach another leaf.
   mites1 = [
-    {gx:19, gy:12, alive:true, step:0},
-    {gx:20, gy:26, alive:true, step:8}
+    {gx:3,  gy:22, home:'leaf1', alive:true,  step:0},
+    {gx:0,  gy:0,  home:null,    alive:false, step:0}
   ];
+  mite2Spawned = false;
   budNoteShown = false;
   shakeWiggle = 0;
   act1Frame = 0;
@@ -920,6 +921,15 @@ function tryMove1(dx,dy){
   if(r==='bud' && !budNoteShown){
     budNoteShown = true;
     showToast('Milkweed buds, just about to open. Your favorite — double munch!', 3000);
+  }
+  // the second mite wakes the first time you set foot on a leaf that
+  // isn't the one you hatched on
+  if(!mite2Spawned && (r==='leaf2' || r==='leaf3')){
+    mite2Spawned = true;
+    const m = mites1[1];
+    m.home = r; m.alive = true;
+    if(r==='leaf2'){ m.gx=35; m.gy=16; } else { m.gx=3; m.gy=8; }
+    showToast('Something small and red stirs on this leaf...', 2200);
   }
 }
 
@@ -950,25 +960,26 @@ function endMite(){
 
 function updateAct1(){
   if(shakeWiggle>0) shakeWiggle--;
-  // the mites hunt: mostly homing toward you, sometimes wandering
+  // each mite patrols only its own leaf (never the stem, never the buds).
+  // It hunts you while you're on its leaf, and wanders when you're not.
   if(!mite) mites1.forEach(m=>{
     if(!m.alive) return;
-    if(++m.step < 16) return;
+    if(++m.step < 22) return;
     m.step = 0;
-    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-    let pick = null;
-    if((act1Frame + m.gx) % 48 < 34){
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]]
+      .filter(d=>region1.get((m.gx+d[0])+','+(m.gy+d[1]))===m.home);
+    if(!dirs.length) return;
+    let pick;
+    if(region1.get(p1.gx+','+p1.gy)===m.home){
       let bd = 1e9;
       dirs.forEach(d=>{
-        if(!region1.has((m.gx+d[0])+','+(m.gy+d[1]))) return;
         const dist = Math.abs(m.gx+d[0]-p1.gx) + Math.abs(m.gy+d[1]-(p1.gy+1));
         if(dist < bd){ bd = dist; pick = d; }
       });
     } else {
-      const opts = dirs.filter(d=>region1.has((m.gx+d[0])+','+(m.gy+d[1])));
-      if(opts.length) pick = opts[(m.gx*7 + m.gy*13 + act1Frame) % opts.length];
+      pick = dirs[(m.gx*7 + m.gy*13 + act1Frame) % dirs.length];
     }
-    if(pick){ m.gx += pick[0]; m.gy += pick[1]; }
+    m.gx += pick[0]; m.gy += pick[1];
     if(Math.abs(m.gx-p1.gx)<=1 && m.gy>=p1.gy-1 && m.gy<=p1.gy+P1_H){
       startMite(m);
     }
@@ -989,6 +1000,12 @@ function tryEat1(){
   if(r==='stem'){ showToast('Nothing to munch on the bare stem.', 1600); return; }
   if(others1.some(o=>{ const b=buffer1(o); return hx>=b.x0&&hx<=b.x1&&hy>=b.y0&&hy<=b.y1; })){
     showToast('Too close to another caterpillar — give them a 1-cell border.');
+    return;
+  }
+  // a rich bud always fills two — with only one container left,
+  // the last munch has to come from a leaf
+  if(r==='bud' && TOTAL_MUNCH - munchFilled < 2){
+    showToast('Only one munch left — finish with a leaf bite, not a rich bud.', 2600);
     return;
   }
   let bites=0;
