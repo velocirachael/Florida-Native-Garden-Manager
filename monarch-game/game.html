@@ -880,11 +880,11 @@ function startAct1(){
   setGameplayControlsVisible(true);
   silkBtn.innerHTML = 'SHAKE<br>(S)';
 
-  p1 = {gx:10, gy:19};   // head cell; body hangs below
+  p1 = {gx:10, gy:19, dir:'v'}; // head cell; body follows; turns as you crawl
   others1 = [
-    {gx:5,  gy:21, h:3, kind:1}, // instar 1 on leaf 1
-    {gx:8,  gy:7,  h:3, kind:1}, // instar 1 on leaf 3
-    {gx:31, gy:13, h:4, kind:2}  // another instar 2 on leaf 2
+    {gx:4,  gy:21, h:3, kind:1, dir:'h'}, // instar 1 lying across leaf 1
+    {gx:8,  gy:7,  h:3, kind:1, dir:'v'}, // instar 1 upright on leaf 3
+    {gx:29, gy:13, h:4, kind:2, dir:'h'}  // instar 2 stretched along leaf 2
   ];
   eaten1 = new Set();
   mite = null;
@@ -902,20 +902,25 @@ function startAct1(){
   hint.textContent = 'crawl the stem between leaves · SPACE: eat · S: shake';
 }
 
-function box1(o){ return {x0:o.gx, y0:o.gy, x1:o.gx, y1:o.gy+o.h-1}; }
-function buffer1(o){ const b=box1(o); return {x0:b.x0-1,y0:b.y0-1,x1:b.x1+1,y1:b.y1+1}; }
+// a body is a run of cells from the head: horizontal or vertical
+function cellsOf1(e){
+  const cells=[], n=e.h||P1_H;
+  for(let i=0;i<n;i++) cells.push(e.dir==='h' ? [e.gx+i,e.gy] : [e.gx,e.gy+i]);
+  return cells;
+}
+function playerCells(){ return cellsOf1({gx:p1.gx, gy:p1.gy, h:P1_H, dir:p1.dir}); }
 
 function tryMove1(dx,dy){
   if(state!=='act1') return;
-  const nx = Math.min(COLS-1, Math.max(0, p1.gx+dx));
-  const ny = Math.min(ROWS-P1_H, Math.max(0, p1.gy+dy));
+  // the body turns to follow the crawl: sideways = horizontal, up/down = vertical
+  const dir = dx!==0 ? 'h' : (dy!==0 ? 'v' : p1.dir);
+  const nx = Math.min(dir==='h' ? COLS-P1_H : COLS-1, Math.max(0, p1.gx+dx));
+  const ny = Math.min(dir==='v' ? ROWS-P1_H : ROWS-1, Math.max(0, p1.gy+dy));
   if(!region1.has(nx+','+ny)) return; // head must stay on the plant
-  const blocked = others1.some(o=>{
-    const b = box1(o);
-    return nx>=b.x0-0 && nx<=b.x1 && ny+P1_H-1>=b.y0 && ny<=b.y1 && nx===o.gx;
-  });
+  const trial = cellsOf1({gx:nx, gy:ny, h:P1_H, dir});
+  const blocked = others1.some(o=> cellsOf1(o).some(c=> trial.some(t=>t[0]===c[0]&&t[1]===c[1])));
   if(blocked){ showToast('Another caterpillar is in the way.', 1400); return; }
-  p1.gx = nx; p1.gy = ny;
+  p1.gx = nx; p1.gy = ny; p1.dir = dir;
 
   const r = region1.get(nx+','+ny);
   if(r==='bud' && !budNoteShown){
@@ -980,7 +985,7 @@ function updateAct1(){
       pick = dirs[(m.gx*7 + m.gy*13 + act1Frame) % dirs.length];
     }
     m.gx += pick[0]; m.gy += pick[1];
-    if(Math.abs(m.gx-p1.gx)<=1 && m.gy>=p1.gy-1 && m.gy<=p1.gy+P1_H){
+    if(playerCells().some(c=>Math.abs(m.gx-c[0])<=1 && Math.abs(m.gy-c[1])<=1)){
       startMite(m);
     }
   });
@@ -998,7 +1003,7 @@ function tryEat1(){
   const r = region1.get(key);
   if(!r) return;
   if(r==='stem'){ showToast('Nothing to munch on the bare stem.', 1600); return; }
-  if(others1.some(o=>{ const b=buffer1(o); return hx>=b.x0&&hx<=b.x1&&hy>=b.y0&&hy<=b.y1; })){
+  if(others1.some(o=> cellsOf1(o).some(c=>Math.abs(hx-c[0])<=1 && Math.abs(hy-c[1])<=1))){
     showToast('Too close to another caterpillar — give them a 1-cell border.');
     return;
   }
@@ -1017,7 +1022,7 @@ function tryEat1(){
       const gx=hx+dx, gy=hy+dy, k=gx+','+gy;
       const rr = region1.get(k);
       if(!rr || rr==='stem' || rr==='bud' || eaten1.has(k)) continue;
-      if(others1.some(o=>gx===o.gx && gy>=o.gy && gy<o.gy+o.h)) continue;
+      if(others1.some(o=> cellsOf1(o).some(c=>c[0]===gx && c[1]===gy))) continue;
       eaten1.add(k); bites++;
     }
   }
@@ -1086,8 +1091,8 @@ function drawAct1(){
   // munched-away cells show sky through the leaf
   eaten1.forEach(k=>{
     const [gx,gy]=k.split(',').map(Number);
-    const coveredByPlayer = gx===p1.gx && gy>=p1.gy && gy<p1.gy+P1_H;
-    const coveredByOther = others1.some(o=>gx===o.gx && gy>=o.gy && gy<o.gy+o.h);
+    const coveredByPlayer = playerCells().some(c=>c[0]===gx && c[1]===gy);
+    const coveredByOther = others1.some(o=>cellsOf1(o).some(c=>c[0]===gx && c[1]===gy));
     if(coveredByPlayer || coveredByOther) return;
     px(gx*CELL,gy*CELL,CELL,CELL, skyColor1(gy));
   });
@@ -1101,14 +1106,14 @@ function drawAct1(){
     px(m.gx*CELL+3, m.gy*CELL+2, 1,1, '#802018');
   });
 
-  // neighbors: pale instar 1s and a banded instar 2
+  // neighbors: pale instar 1s and a banded instar 2, some upright, some lying flat
   others1.forEach(o=>{
-    if(o.kind===1) drawCaterpillar(o.gx,o.gy,'#c9d8a8','#a8b888');
-    else drawCat2(o.gx,o.gy,false);
+    if(o.kind===1) drawWorm1(cellsOf1(o), ['#c9d8a8','#a8b888'], false);
+    else drawWorm1(cellsOf1(o), ['#2b2320','#e8c84a','#f4e9d8'], false);
   });
 
-  // player: banded instar 2, wiggling when shaking
-  drawCat2(p1.gx,p1.gy,true);
+  // player: banded instar 2, turning with its crawl, wiggling when shaking
+  drawWorm1(playerCells(), ['#2b2320','#e8c84a','#f4e9d8'], true);
 
   // the clinging mite, jittering on your head
   if(mite){
@@ -1117,23 +1122,28 @@ function drawAct1(){
   }
 }
 
-// instar 2 look: black / yellow / white banding
-function drawCat2(gx,gy,isPlayer){
+// draws any caterpillar body — horizontal or vertical — from its cells,
+// banded head to tail, with nubby antennae poking from the head
+function drawWorm1(cells, bands, isPlayer){
   const wob = isPlayer && shakeWiggle>0 ? Math.sin(act1Frame*1.6)*1.5 : 0;
-  const x = gx*CELL+wob, y = gy*CELL;
-  const bands = ['#2b2320','#e8c84a','#f4e9d8','#2b2320'];
-  px(x-0.5,y-0.5,CELL+1,P1_H*CELL+1,'#1c1d2e');
-  for(let seg=0; seg<P1_H; seg++){
-    px(x, y+seg*CELL, CELL, CELL, bands[seg%bands.length]);
-    px(x, y+seg*CELL, 1, CELL, 'rgba(255,255,255,0.25)');
-    if(seg>0){
-      px(x-1, y+seg*CELL+CELL-1, 1,1, '#2b2320');
-      px(x+CELL, y+seg*CELL+CELL-1, 1,1, '#2b2320');
-    }
+  const xs = cells.map(c=>c[0]), ys = cells.map(c=>c[1]);
+  const x0 = Math.min(...xs)*CELL+wob, y0 = Math.min(...ys)*CELL;
+  px(x0-0.5, y0-0.5, (Math.max(...xs)-Math.min(...xs)+1)*CELL+1,
+     (Math.max(...ys)-Math.min(...ys)+1)*CELL+1, '#1c1d2e');
+  cells.forEach((c,i)=>{
+    const sx = c[0]*CELL+wob, sy = c[1]*CELL;
+    px(sx, sy, CELL, CELL, bands[i%bands.length]);
+    px(sx, sy, 1, CELL, 'rgba(255,255,255,0.25)');
+  });
+  const h = cells[0], horizontal = cells.length>1 && cells[1][1]===h[1];
+  const hx = h[0]*CELL+wob, hy = h[1]*CELL;
+  if(horizontal){
+    px(hx-2, hy, 2,1, '#2b2320');
+    px(hx-2, hy+CELL-1, 2,1, '#2b2320');
+  } else {
+    px(hx, hy-2, 1,2, '#2b2320');
+    px(hx+CELL-1, hy-2, 1,2, '#2b2320');
   }
-  // tiny front tentacles — instar 2's new feature
-  px(x, y-2, 1,2, '#2b2320');
-  px(x+CELL-1, y-2, 1,2, '#2b2320');
 }
 
 function drawMolt(t){
