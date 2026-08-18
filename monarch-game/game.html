@@ -849,7 +849,7 @@ function drawInstar2Wake(t){
 const P1_H = 4; // instar 2 body: 1 cell wide x 4 tall
 let p1, others1, eaten1, region1, mite, mites1, mite2Spawned;
 let act1Frame, budNoteShown, shakeWiggle;
-let hang2, spider, giant, giantDone, shadowNoteShown; // act 2: silk-drop, spider, giant instar 5
+let hang2, spider, giant, giantDone, shadowNoteShown, lastMunch2; // act 2: silk-drop, spider, giant instar 5
 
 function inEllipse(gx,gy,cx,cy,rx,ry){
   const ex=(gx-cx)/rx, ey=(gy-cy)/ry;
@@ -1075,6 +1075,7 @@ function tryEat1(){
   if(!bites){ showToast('Munched bare here. Crawl to a fresh spot.', 1600); return; }
   const gain = r==='bud' ? 2 : 1;
   munchFilled = Math.min(TOTAL_MUNCH, munchFilled+gain);
+  if(state==='act2') lastMunch2 = act1Frame; // munching makes noise the spider feels
   renderHUD();
   if(r==='bud') showToast('Bud! Soft and sweet — two munch at once!', 1800);
   if(munchFilled>=TOTAL_MUNCH){ state==='act2' ? finishAct2() : finishAct1(); }
@@ -1212,7 +1213,8 @@ function startAct2(){
   shakeWiggle = 0;
   hang2 = false;
   shadowNoteShown = false;
-  spider = {gx:40, gy:14, step:0, cool:0};
+  spider = {gx:40, gy:14, step:0, cool:0, chasing:false};
+  lastMunch2 = -9999; // the spider hunts by vibration — quiet until you munch
   giant = {active:false, x:0, row:0, hitP:false};
   giantDone = false;
   act1Frame = 0;
@@ -1265,11 +1267,12 @@ function updateAct2(){
   // the player so it navigates around leaves instead of pacing at dead ends.
   const s = spider;
   if(s.cool>0) s.cool--;
-  if(++s.step >= (s.chasing?8:13)){
+  if(++s.step >= (s.chasing?10:16)){
     s.step = 0;
     const dmap = bfsFrom(p1.gx, p1.gy);
     const pathDist = dmap.get(s.gx+','+s.gy) ?? 999;
-    s.chasing = !hidden && s.cool<=0 && pathDist<22;
+    const heardYou = act1Frame - lastMunch2 < 240; // ~4s of munching vibrations
+    s.chasing = !hidden && s.cool<=0 && pathDist<14;
     const dirs = [[1,0],[-1,0],[0,1],[0,-1]].filter(d=>{
       const r = region1.get((s.gx+d[0])+','+(s.gy+d[1]));
       return r && r!=='bud';
@@ -1284,11 +1287,11 @@ function updateAct2(){
       } else if(s.cool>0){ // slinks away after a lunge
         let bd=-1;
         dirs.forEach(d=>{ const dd=dmap.get((s.gx+d[0])+','+(s.gy+d[1])) ?? 998; if(dd>bd){bd=dd;pick=d;} });
-      } else if(!hidden){
-        // it feels the vibration of your munching and stalks, slowly, always
+      } else if(!hidden && heardYou){
+        // fresh munching vibrations — it stalks toward them
         pick = toward();
       } else {
-        // trail gone cold — it wanders the bush
+        // quiet bush — it wanders, no trail to follow
         pick = dirs[(s.gx*7 + s.gy*13 + act1Frame) % dirs.length];
       }
       if(pick){ s.gx += pick[0]; s.gy += pick[1]; }
@@ -1297,7 +1300,7 @@ function updateAct2(){
       munchFilled = Math.max(0, munchFilled-3);
       renderHUD();
       shakeWiggle = 14;
-      s.cool = 420;
+      s.cool = 780; // a long retreat — you've earned a quiet stretch
       s.chasing = false;
       showToast('The spider lunges! You wrench free — three munch lost.', 3000);
     }
