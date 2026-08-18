@@ -191,8 +191,9 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 const W = canvas.width, H = canvas.height;
-const CELL = 4;
-const COLS = W / CELL, ROWS = H / CELL;
+let CELL = 4;
+let COLS = W / CELL, ROWS = H / CELL;
+function setGrid(c){ CELL = c; COLS = W / CELL; ROWS = H / CELL; }
 // body: 1 cell wide x 3 cells tall (instar 1). Buffer = 1-cell border -> 3x5 no-eat zone.
 const BODY_W = 1, BODY_H = 3;
 
@@ -457,6 +458,7 @@ function buildLeafTexture(){
 
 function startAct0(){
   state = 'act0';
+  setGrid(4);
   overlay.style.display='none';
   skipBtn.style.display='none';
   hud.style.display='flex';
@@ -847,30 +849,65 @@ function drawInstar2Wake(t){
 const P1_H = 4; // instar 2 body: 1 cell wide x 4 tall
 let p1, others1, eaten1, region1, mite, mites1, mite2Spawned;
 let act1Frame, budNoteShown, shakeWiggle;
-let hang2, sweepX, sweepHit, nextSweep2; // act 2: silk-drop and wasp sweeps
+let hang2, spider, giant, giantDone, shadowNoteShown; // act 2: silk-drop, spider, giant instar 5
 
 function inEllipse(gx,gy,cx,cy,rx,ry){
   const ex=(gx-cx)/rx, ey=(gy-cy)/ry;
   return ex*ex+ey*ey <= 1;
 }
 
-function buildPlant(){
-  region1 = new Map(); // "gx,gy" -> 'bud'|'leaf1'|'leaf2'|'leaf3'|'stem'
+// plant geometry is data: leaves as ellipses, stem pieces as rects, one bud
+// cluster — buildRegions turns whichever set is loaded into the cell map
+let plantLeaves, plantStems, plantBuds, shadowCells;
+function buildRegions(){
+  region1 = new Map(); // "gx,gy" -> 'bud'|'leafN'|'stem'
   const mark=(gx,gy,r)=>{
     if(gx>=0&&gy>=0&&gx<COLS&&gy<ROWS && !region1.has(gx+','+gy)) region1.set(gx+','+gy,r);
   };
-  // bud cluster first so it wins the top of the stem
-  for(let gx=16;gx<=24;gx++)for(let gy=1;gy<=6;gy++)
-    if(inEllipse(gx,gy,20,3.4,3.4,2.7)) mark(gx,gy,'bud');
-  for(let gx=0;gx<COLS;gx++)for(let gy=0;gy<ROWS;gy++){
-    if(inEllipse(gx,gy,10,22,8,4.6)) mark(gx,gy,'leaf1');
-    else if(inEllipse(gx,gy,29,16,8,4.6)) mark(gx,gy,'leaf2');
-    else if(inEllipse(gx,gy,9,8,7,4.2)) mark(gx,gy,'leaf3');
-  }
-  for(let gy=2;gy<=28;gy++){ mark(19,gy,'stem'); mark(20,gy,'stem'); }
-  for(let gx=15;gx<=19;gx++){ mark(gx,21,'stem'); mark(gx,22,'stem'); } // branch to leaf1
-  for(let gx=20;gx<=23;gx++){ mark(gx,15,'stem'); mark(gx,16,'stem'); } // branch to leaf2
-  for(let gx=15;gx<=19;gx++){ mark(gx,7,'stem');  mark(gx,8,'stem');  } // branch to leaf3
+  const b = plantBuds; // marked first so buds win the top of the stem
+  for(let gx=Math.floor(b[0]-b[2]);gx<=Math.ceil(b[0]+b[2]);gx++)
+    for(let gy=Math.max(0,Math.floor(b[1]-b[3]));gy<=Math.ceil(b[1]+b[3]);gy++)
+      if(inEllipse(gx,gy,b[0],b[1],b[2],b[3])) mark(gx,gy,'bud');
+  for(let gx=0;gx<COLS;gx++)for(let gy=0;gy<ROWS;gy++)
+    for(let i=0;i<plantLeaves.length;i++){
+      const l=plantLeaves[i];
+      if(inEllipse(gx,gy,l[0],l[1],l[2],l[3])){ mark(gx,gy,'leaf'+(i+1)); break; }
+    }
+  plantStems.forEach(s=>{
+    for(let gx=s[0];gx<s[0]+s[2];gx++)for(let gy=s[1];gy<s[1]+s[3];gy++) mark(gx,gy,'stem');
+  });
+}
+
+function buildPlant(){ // act 1: a single milkweed plant, close up
+  setGrid(4);
+  plantLeaves=[[10,22,8,4.6],[29,16,8,4.6],[9,8,7,4.2]];
+  plantStems=[[19,2,2,27],[15,21,5,2],[20,15,4,2],[15,7,5,2]];
+  plantBuds=[20,3.4,3.4,2.7];
+  shadowCells = new Set();
+  buildRegions();
+}
+
+function buildBush(){ // act 2: zoomed out — the whole milkweed bush
+  setGrid(2);
+  plantLeaves=[
+    [20,48,12,6],[58,42,12,6],[16,30,10,5],
+    [62,24,10,5],[28,12,9,4.5],[54,10,8,4]
+  ];
+  plantStems=[
+    [39,4,3,55],            // main stalk
+    [31,47,8,3],[42,41,4,3],[26,29,13,3],
+    [42,23,10,3],[37,11,2,3],[42,9,4,3]
+  ];
+  plantBuds=[40,4,5,3];
+  buildRegions();
+  // cool shade pockets under the big leaves — safe hiding spots
+  shadowCells = new Set();
+  const shades=[[14,50,5,2.5],[64,44,5,2.5],[10,31,4,2],[68,25,4,2]];
+  region1.forEach((r,k)=>{
+    if(!r.startsWith('leaf')) return;
+    const [gx,gy]=k.split(',').map(Number);
+    if(shades.some(s=>inEllipse(gx,gy,s[0],s[1],s[2],s[3]))) shadowCells.add(k);
+  });
 }
 
 function startAct1(){
@@ -1069,14 +1106,10 @@ function drawAct1(){
 
   // stem + branches (draw under leaves)
   ctx.fillStyle='#5c6b3a';
-  ctx.fillRect(19*CELL, 2*CELL, 2*CELL, 27*CELL);
-  ctx.fillRect(15*CELL, 21*CELL, 5*CELL, 2*CELL);
-  ctx.fillRect(20*CELL, 15*CELL, 4*CELL, 2*CELL);
-  ctx.fillRect(15*CELL, 7*CELL, 5*CELL, 2*CELL);
+  plantStems.forEach(s=>ctx.fillRect(s[0]*CELL, s[1]*CELL, s[2]*CELL, s[3]*CELL));
 
   // leaves as smooth ellipses with a vein
-  const leaves=[[10,22,8,4.6],[29,16,8,4.6],[9,8,7,4.2]];
-  leaves.forEach(l=>{
+  plantLeaves.forEach(l=>{
     ctx.fillStyle='#4f7942';
     ctx.beginPath();
     ctx.ellipse((l[0]+0.5)*CELL,(l[1]+0.5)*CELL,(l[2]+0.5)*CELL,(l[3]+0.5)*CELL,0,0,Math.PI*2);
@@ -1086,6 +1119,14 @@ function drawAct1(){
     ctx.moveTo((l[0]-l[2])*CELL+3,(l[1]+0.5)*CELL);
     ctx.lineTo((l[0]+l[2])*CELL+1,(l[1]+0.5)*CELL);
     ctx.stroke();
+  });
+
+  // cool shade pockets under the big leaves — safe hiding spots
+  shadowCells.forEach(k=>{
+    if(eaten1.has(k)) return;
+    const [gx,gy]=k.split(',').map(Number);
+    ctx.fillStyle='rgba(15,20,30,0.30)';
+    ctx.fillRect(gx*CELL, gy*CELL, CELL, CELL);
   });
 
   // bud cluster: bright, glossy orbs with pink tips — almost open
@@ -1135,15 +1176,18 @@ function drawAct1(){
 
 /* =========================================================
    ACT 2 — INSTAR 3
-   A fresh plant and a bigger appetite: 15 munch containers.
-   The new danger comes from the sky — a hunting paper wasp
-   sweeps over the plant. The instinct that saves you is real
-   monarch behavior: DROP off the leaf on a silk line (or press
-   yourself flat against the stem) until the shadow passes.
+   Zoomed out to the whole milkweed bush: six leaves, a tall
+   stalk, instars of every size. Shadows keep their meaning —
+   the cool shade pockets under the big leaves are SAFE, and
+   so is dangling on silk. The level enemy is a wandering
+   spider you can always see coming. And once, mid-meal, a
+   GIANT instar 5 barrels through on its way to chrysalis —
+   it means no harm, but everyone gets knocked aside. Your
+   silk anchor is why you don't fall off.
    ========================================================= */
 function startAct2(){
   state='act2';
-  buildPlant();
+  buildBush();
   overlay.style.display='none';
   panelText.style.display='none';
   continueBtn.classList.remove('show');
@@ -1154,21 +1198,26 @@ function startAct2(){
   setGameplayControlsVisible(true);
   silkBtn.innerHTML = 'DROP<br>(S)';
 
-  p1 = {gx:10, gy:19, dir:'v', h:5}; // instar 3: longer body, real antennae
-  others1 = [
-    {gx:5,  gy:20, h:3, kind:1, dir:'h'}, // a late instar 1
-    {gx:8,  gy:6,  h:4, kind:2, dir:'v'}, // an instar 2 upright on leaf 3
-    {gx:28, gy:14, h:5, kind:2, dir:'h'}  // another big one along leaf 2
+  p1 = {gx:20, gy:44, dir:'v', h:5}; // instar 3: longer body, real antennae
+  others1 = [ // instars of all sizes share the bush
+    {gx:14, gy:47, h:2, kind:1, dir:'h'},
+    {gx:58, gy:40, h:3, kind:1, dir:'v'},
+    {gx:60, gy:24, h:4, kind:2, dir:'h'},
+    {gx:26, gy:10, h:5, kind:2, dir:'v'},
+    {gx:52, gy:8,  h:6, kind:2, dir:'h'}
   ];
   eaten1 = new Set();
   mite = null; mites1 = []; mite2Spawned = true; // the mites had their day
   budNoteShown = true;
   shakeWiggle = 0;
-  hang2 = false; sweepX = null; sweepHit = false;
+  hang2 = false;
+  shadowNoteShown = false;
+  spider = {gx:40, gy:14, step:0, cool:0};
+  giant = {active:false, x:0, row:0, hitP:false};
+  giantDone = false;
   act1Frame = 0;
-  nextSweep2 = 650; // first wasp pass, with a warning 2 seconds before
-  showToast('A fresh plant, a bigger hunger: 15 munches. And watch the sky...', 3400);
-  hint.textContent = 'eat and grow · S: DROP on silk when a shadow passes';
+  showToast('The whole bush, and a bigger hunger: 15 munches. Something is prowling...', 3400);
+  hint.textContent = 'leaf shadows hide you · S: drop on silk · watch for the spider';
 }
 
 function tryDrop(){
@@ -1176,55 +1225,152 @@ function tryDrop(){
   hang2 = !hang2;
   if(hang2){
     silkBtn.innerHTML = 'CLIMB<br>(S)';
-    showToast('You drop on a silk line, dangling out of sight.', 1800);
+    showToast('You drop on a silk line, anchored and out of reach.', 1800);
   } else {
     silkBtn.innerHTML = 'DROP<br>(S)';
     showToast('You climb the silk back to your perch.', 1500);
   }
 }
 
+function playerHidden(){
+  const key = p1.gx+','+p1.gy;
+  return hang2 || (shadowCells.has(key) && !eaten1.has(key));
+}
+
+// breadth-first distances across the plant from one cell — the spider's map
+function bfsFrom(sx,sy){
+  const dist = new Map([[sx+','+sy,0]]);
+  const q=[[sx,sy]];
+  for(let qi=0; qi<q.length; qi++){
+    const [x,y]=q[qi];
+    const d=dist.get(x+','+y);
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const k=(x+dx)+','+(y+dy);
+      if(region1.has(k) && !dist.has(k)){ dist.set(k,d+1); q.push([x+dx,y+dy]); }
+    }
+  }
+  return dist;
+}
+
 function updateAct2(){
   if(shakeWiggle>0) shakeWiggle--;
-  if(act1Frame === nextSweep2-120){
-    showToast('A shadow blots out the sun... DROP (S) or hug the stem!', 3000);
+  const hidden = playerHidden();
+  if(!shadowNoteShown && !hang2 && hidden){
+    shadowNoteShown = true;
+    showToast('Cool leaf-shade. The spider cannot see you here.', 2400);
   }
-  if(act1Frame >= nextSweep2 && act1Frame < nextSweep2+200){
-    sweepX = -30 + (act1Frame-nextSweep2)/200 * (W+60);
-    const safe = hang2 || region1.get(p1.gx+','+p1.gy)==='stem';
-    if(!sweepHit && !safe && Math.abs(sweepX - (p1.gx*CELL+2)) < 12){
-      sweepHit = true;
+
+  // the spider: prowls the bush along its real geometry, chases what it can
+  // sense, never enters the buds. Pursuit follows a BFS distance field from
+  // the player so it navigates around leaves instead of pacing at dead ends.
+  const s = spider;
+  if(s.cool>0) s.cool--;
+  if(++s.step >= (s.chasing?8:13)){
+    s.step = 0;
+    const dmap = bfsFrom(p1.gx, p1.gy);
+    const pathDist = dmap.get(s.gx+','+s.gy) ?? 999;
+    s.chasing = !hidden && s.cool<=0 && pathDist<22;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]].filter(d=>{
+      const r = region1.get((s.gx+d[0])+','+(s.gy+d[1]));
+      return r && r!=='bud';
+    });
+    if(dirs.length){
+      let pick;
+      const toward = ()=>{ let bd=1e9,p=null;
+        dirs.forEach(d=>{ const dd=dmap.get((s.gx+d[0])+','+(s.gy+d[1])) ?? 998; if(dd<bd){bd=dd;p=d;} });
+        return p; };
+      if(s.chasing){
+        pick = toward();
+      } else if(s.cool>0){ // slinks away after a lunge
+        let bd=-1;
+        dirs.forEach(d=>{ const dd=dmap.get((s.gx+d[0])+','+(s.gy+d[1])) ?? 998; if(dd>bd){bd=dd;pick=d;} });
+      } else if(!hidden){
+        // it feels the vibration of your munching and stalks, slowly, always
+        pick = toward();
+      } else {
+        // trail gone cold — it wanders the bush
+        pick = dirs[(s.gx*7 + s.gy*13 + act1Frame) % dirs.length];
+      }
+      if(pick){ s.gx += pick[0]; s.gy += pick[1]; }
+    }
+    if(!hidden && s.cool<=0 && playerCells().some(c=>Math.abs(s.gx-c[0])<=1 && Math.abs(s.gy-c[1])<=1)){
       munchFilled = Math.max(0, munchFilled-3);
       renderHUD();
       shakeWiggle = 14;
-      showToast('The wasp strikes! You tumble and cling on — three munch lost.', 3000);
+      s.cool = 420;
+      s.chasing = false;
+      showToast('The spider lunges! You wrench free — three munch lost.', 3000);
     }
-  } else if(act1Frame === nextSweep2+200){
-    sweepX = null; sweepHit = false;
-    nextSweep2 += 1000;
-    showToast('The sky is clear again.', 1600);
+  }
+
+  // the giant instar 5, once, when you're well into your meal
+  if(!giantDone && !giant.active && munchFilled>=7){
+    giant.active = true; giant.x = -15; giant.hitP = false;
+    giant.row = Math.max(6, Math.min(ROWS-10, p1.gy-1));
+    showToast('The whole bush shakes... something enormous is coming!', 2800);
+  }
+  if(giant.active && act1Frame%3===0){
+    giant.x++;
+    const inPath = (gx,gy)=> gx>=giant.x && gx<giant.x+14 && gy>=giant.row && gy<giant.row+4;
+    if(!hang2 && !giant.hitP && playerCells().some(c=>inPath(c[0],c[1]))){
+      giant.hitP = true;
+      const ny = Math.max(0, Math.min(ROWS-(p1.h||P1_H), p1.gy + (p1.gy<=giant.row+1 ? -6 : 6)));
+      if(region1.has(p1.gx+','+ny)) p1.gy = ny;
+      shakeWiggle = 16;
+      showToast('The giant instar 5 barrels through! Your silk anchor holds.', 3000);
+    }
+    others1.forEach(o=>{
+      if(!o.pushed && cellsOf1(o).some(c=>inPath(c[0],c[1]))){
+        o.pushed = true;
+        const ny = Math.max(0, Math.min(ROWS-o.h, o.gy + (o.gy<=giant.row+1 ? -5 : 5)));
+        if(region1.has(o.gx+','+ny)) o.gy = ny;
+      }
+    });
+    if(giant.x > COLS+2){
+      giant.active = false; giantDone = true;
+      showToast('It lumbers off to find a place for its chrysalis. Good luck, big one.', 3200);
+    }
   }
 }
 
 function drawAct2Overlay(){
-  // dangling on a silk line below the perch
+  // dangling on a silk line below the perch, anchored
   if(hang2){
-    const hx = p1.gx*CELL+2, top = p1.gy*CELL;
+    const hx = p1.gx*CELL + CELL/2, top = p1.gy*CELL;
     ctx.strokeStyle='rgba(244,233,216,0.85)';
     ctx.lineWidth=0.7;
     ctx.beginPath(); ctx.moveTo(hx, top); ctx.lineTo(hx, top+16); ctx.stroke();
     const bands=['#2b2320','#e8c84a','#f4e9d8'];
     const sway = Math.sin(act1Frame/16)*1.2;
-    for(let i=0;i<5;i++) px(hx-2+sway, top+16+i*4, 4, 4, bands[i%3]);
+    for(let i=0;i<5;i++) px(hx-2+sway, top+16+i*3, 4, 3, bands[i%3]);
   }
-  // the wasp's shadow-column crossing the plant, wasp high overhead
-  if(sweepX!==null){
-    ctx.fillStyle='rgba(15,15,30,0.30)';
-    ctx.beginPath();
-    ctx.ellipse(sweepX, H/2, 20, H/2+10, 0, 0, Math.PI*2);
-    ctx.fill();
-    px(sweepX-3, 6, 7, 3, '#f0c83c');
-    px(sweepX-1, 6, 1, 3, '#2b2320');
-    px(sweepX+1, 6, 1, 3, '#2b2320');
+  // the spider, legs and all — red-eyed while it has you in sight
+  const sx = spider.gx*CELL, sy = spider.gy*CELL;
+  ctx.strokeStyle='#3a2a20'; ctx.lineWidth=0.7;
+  for(let i=-1;i<=2;i++){
+    ctx.beginPath(); ctx.moveTo(sx+1, sy+1); ctx.lineTo(sx-3, sy-2+i*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx+2, sy+1); ctx.lineTo(sx+6, sy-2+i*2); ctx.stroke();
+  }
+  px(sx-1, sy-1, 5, 4, '#4a3020');
+  px(sx,   sy-2, 3, 2, '#5a3c28');
+  if(!playerHidden() && spider.cool<=0 && Math.abs(spider.gx-p1.gx)+Math.abs(spider.gy-p1.gy)<16){
+    px(sx, sy-2, 1, 1, '#e03030');
+    px(sx+2, sy-2, 1, 1, '#e03030');
+  }
+  // the giant instar 5, crossing the bush
+  if(giant.active){
+    const bands=['#2b2320','#e8c84a','#f4e9d8'];
+    const gy = giant.row*CELL;
+    for(let cx=0; cx<14; cx++){
+      const gx = giant.x+cx;
+      if(gx<0 || gx>=COLS) continue;
+      px(gx*CELL, gy, CELL, 4*CELL, bands[cx%3]);
+      px(gx*CELL, gy, CELL, 1, 'rgba(255,255,255,0.25)');
+    }
+    const headPx = Math.min(COLS-1, giant.x+13)*CELL + CELL;
+    ctx.strokeStyle='#2b2320'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(headPx, gy); ctx.lineTo(headPx+4, gy-5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(headPx, gy+4*CELL); ctx.lineTo(headPx+4, gy+4*CELL+5); ctx.stroke();
   }
 }
 
@@ -1236,7 +1382,7 @@ function finishAct2(){
   overlay.className = 'pos-top-left';
   overlay.style.display='flex';
   panelText.style.display='block';
-  panelText.textContent = 'Fifteen munches full, and the wasp never caught you. The tight-skin feeling again... molt number three.';
+  panelText.textContent = 'Fifteen munches full, and the spider never got you. The tight-skin feeling again... molt number three.';
   continueBtn.classList.add('show');
 }
 
