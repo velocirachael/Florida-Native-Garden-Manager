@@ -215,7 +215,7 @@ function setGameplayControlsVisible(visible){
 }
 setGameplayControlsVisible(false); // hidden until Act 0 actually starts
 
-let state = 'comic'; // comic -> act0 -> storm -> morning -> instar2wake
+let state = 'comic'; // comic -> act0 -> storm -> morning -> instar2wake -> act1 -> act1molt -> instar3wake
 let comicIndex = 0;
 let frame = 0;
 
@@ -234,7 +234,7 @@ function px(x,y,w,h,color){
 function clear(color){ px(0,0,W,H,color); }
 
 /* ---------- MUNCH HUD ---------- */
-const TOTAL_MUNCH = 5;
+let TOTAL_MUNCH = 5;   // grows to 10 in instar 2
 let munchFilled = 1; // egg gift from mother
 
 function leafletSVG(filled){
@@ -242,7 +242,7 @@ function leafletSVG(filled){
   const veinColor = filled ? 'rgba(244,233,216,0.7)' : 'transparent';
   return `<svg viewBox="0 0 16 16">
     <path d="M8 1 C 3 3, 1 8, 8 15 C 15 8, 13 3, 8 1 Z"
-      fill="${fillColor}" stroke="#f4e9d8" stroke-width="1.4"/>
+      fill="${fillColor}" stroke="#5b3a21" stroke-width="1.4"/>
     <path d="M8 3 L 8 13" stroke="${veinColor}" stroke-width="0.8"/>
   </svg>`;
 }
@@ -707,7 +707,7 @@ function drawCaterpillar(gx,gy,baseColor,shadeColor){
 }
 
 /* ---------- STORM CUTSCENE ---------- */
-let stormFrame, flashTimes;
+let stormFrame, flashTimes, boltT, boltX;
 function startStorm(){
   state = 'storm';
   overlay.className = '';
@@ -716,8 +716,9 @@ function startStorm(){
   hint.textContent='';
   setGameplayControlsVisible(false);
   stormFrame = 0;
-  // irregular, spaced-out flashes for a slower, more dramatic build
-  flashTimes = [20,21,22,55,56,95,96,97,140,141,190,191,192];
+  boltT = 0;
+  // irregular, spaced-out strikes for a slower, more dramatic build
+  flashTimes = [20,55,95,140,190];
 }
 function drawStorm(){
   clear('#1c1d2e');
@@ -728,12 +729,19 @@ function drawStorm(){
     const ry = (i*7 + stormFrame*4)%H;
     ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(rx-3,ry+9); ctx.stroke();
   }
+  // jagged yellow bolts instead of full-screen flashes — no strobing,
+  // safe for photosensitive players
   if(flashTimes.includes(stormFrame)){
-    // brief jolt: white flash with a small screen-shake feel via offset re-flash
-    clear('#eef0ff');
+    boltT = 10;
+    boltX = 20 + (stormFrame*37) % (W-40);
+  }
+  if(boltT > 0){
+    drawBolt(boltX, 10-boltT);
+    boltT--;
   }
   stormFrame++;
   if(stormFrame===210){
+    boltT = 0;
     overlay.className = 'pos-top-left';
     panelText.style.display='block';
     panelText.textContent = 'The storm rages through the night.';
@@ -742,6 +750,24 @@ function drawStorm(){
   if(stormFrame===370){
     startMorning();
   }
+}
+// a jagged bolt drawn as lines only — luminance stays local, never full-screen
+function drawBolt(x, age){
+  const fade = Math.max(0, 1 - age*0.1);
+  let bx = x, by = 0;
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  for(let i=1; i<=7; i++){
+    bx += (i%2===0 ? 1 : -1) * (3 + ((x*i*7)%6));
+    by += 9 + ((x*i*13)%5);
+    ctx.lineTo(bx, by);
+  }
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = `rgba(255,224,138,${0.85*fade})`;
+  ctx.stroke();
+  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = `rgba(255,245,200,${0.9*fade})`;
+  ctx.stroke();
 }
 
 /* ---------- MORNING SAFE SCENE ---------- */
@@ -779,14 +805,26 @@ function drawMorning(t){
 continueBtn.addEventListener('click', ()=>{
   if(state==='morning'){
     startInstar2Wake();
+  } else if(state==='instar2wake'){
+    startAct1();
+  } else if(state==='act1molt'){
+    state='instar3wake';
+    panelText.textContent = 'INSTAR 3. Bigger, bolder — and those antennae are real now.';
+  } else if(state==='instar3wake'){
+    startAct2();
+  } else if(state==='act2molt'){
+    state='instar4wake';
+    panelText.textContent = 'INSTAR 4 begins... (more to come)';
+    continueBtn.classList.remove('show');
   }
 });
 
-/* ---------- INSTAR 2 WAKE (build stops here) ---------- */
+/* ---------- INSTAR 2 WAKE ---------- */
 function startInstar2Wake(){
   state='instar2wake';
   continueBtn.classList.remove('show');
-  panelText.textContent = 'HUNGRY. Instar 2 begins... (more to come)';
+  panelText.textContent = 'HUNGRY. And bigger. Instar 2 begins.';
+  setTimeout(()=>{ if(state==='instar2wake') continueBtn.classList.add('show'); }, 900);
 }
 function drawInstar2Wake(t){
   clear('#f7c9a0');
@@ -797,6 +835,463 @@ function drawInstar2Wake(t){
   px(70,64+bob,16,6,'#e8722c');
   px(70,62+bob,3,3,'#2b2320');
   px(83,62+bob,3,3,'#2b2320');
+}
+
+/* =========================================================
+   ACT 1 — INSTAR 2
+   A whole milkweed plant: stem, three leaves, and the flower
+   buds at the top (just about to open — a favorite food, worth
+   double munch). Two clover mites lurk; SHAKE fast to lose one
+   munch instead of two. Other instars share the plant.
+   ========================================================= */
+const P1_H = 4; // instar 2 body: 1 cell wide x 4 tall
+let p1, others1, eaten1, region1, mite, mites1, mite2Spawned;
+let act1Frame, budNoteShown, shakeWiggle;
+let hang2, sweepX, sweepHit, nextSweep2; // act 2: silk-drop and wasp sweeps
+
+function inEllipse(gx,gy,cx,cy,rx,ry){
+  const ex=(gx-cx)/rx, ey=(gy-cy)/ry;
+  return ex*ex+ey*ey <= 1;
+}
+
+function buildPlant(){
+  region1 = new Map(); // "gx,gy" -> 'bud'|'leaf1'|'leaf2'|'leaf3'|'stem'
+  const mark=(gx,gy,r)=>{
+    if(gx>=0&&gy>=0&&gx<COLS&&gy<ROWS && !region1.has(gx+','+gy)) region1.set(gx+','+gy,r);
+  };
+  // bud cluster first so it wins the top of the stem
+  for(let gx=16;gx<=24;gx++)for(let gy=1;gy<=6;gy++)
+    if(inEllipse(gx,gy,20,3.4,3.4,2.7)) mark(gx,gy,'bud');
+  for(let gx=0;gx<COLS;gx++)for(let gy=0;gy<ROWS;gy++){
+    if(inEllipse(gx,gy,10,22,8,4.6)) mark(gx,gy,'leaf1');
+    else if(inEllipse(gx,gy,29,16,8,4.6)) mark(gx,gy,'leaf2');
+    else if(inEllipse(gx,gy,9,8,7,4.2)) mark(gx,gy,'leaf3');
+  }
+  for(let gy=2;gy<=28;gy++){ mark(19,gy,'stem'); mark(20,gy,'stem'); }
+  for(let gx=15;gx<=19;gx++){ mark(gx,21,'stem'); mark(gx,22,'stem'); } // branch to leaf1
+  for(let gx=20;gx<=23;gx++){ mark(gx,15,'stem'); mark(gx,16,'stem'); } // branch to leaf2
+  for(let gx=15;gx<=19;gx++){ mark(gx,7,'stem');  mark(gx,8,'stem');  } // branch to leaf3
+}
+
+function startAct1(){
+  state='act1';
+  buildPlant();
+  overlay.style.display='none';
+  panelText.style.display='none';
+  continueBtn.classList.remove('show');
+  TOTAL_MUNCH = 10;      // instar 2: double the containers
+  munchFilled = 1;       // woke up hungry
+  hud.style.display='flex';
+  renderHUD();
+  setGameplayControlsVisible(true);
+  silkBtn.innerHTML = 'SHAKE<br>(S)';
+
+  p1 = {gx:10, gy:19, dir:'v'}; // head cell; body follows; turns as you crawl
+  others1 = [
+    {gx:4,  gy:21, h:3, kind:1, dir:'h'}, // instar 1 lying across leaf 1
+    {gx:8,  gy:7,  h:3, kind:1, dir:'v'}, // instar 1 upright on leaf 3
+    {gx:29, gy:13, h:4, kind:2, dir:'h'}  // instar 2 stretched along leaf 2
+  ];
+  eaten1 = new Set();
+  mite = null;
+  // exactly two clover mites, each bound to a leaf — never the buds.
+  // #1 lurks on your starting leaf; #2 stirs when you reach another leaf.
+  mites1 = [
+    {gx:3,  gy:22, home:'leaf1', alive:true,  step:0},
+    {gx:0,  gy:0,  home:null,    alive:false, step:0}
+  ];
+  mite2Spawned = false;
+  budNoteShown = false;
+  shakeWiggle = 0;
+  act1Frame = 0;
+  showToast('A whole plant to explore. The stem connects every leaf.', 3000);
+  hint.textContent = 'crawl the stem between leaves · SPACE: eat · S: shake';
+}
+
+// a body is a run of cells from the head: horizontal or vertical
+function cellsOf1(e){
+  const cells=[], n=e.h||P1_H;
+  for(let i=0;i<n;i++) cells.push(e.dir==='h' ? [e.gx+i,e.gy] : [e.gx,e.gy+i]);
+  return cells;
+}
+function playerCells(){ return cellsOf1({gx:p1.gx, gy:p1.gy, h:p1.h||P1_H, dir:p1.dir}); }
+
+function tryMove1(dx,dy){
+  if(state!=='act1' && state!=='act2') return;
+  if(state==='act2' && hang2){ showToast('Hanging on silk — climb back up first (S).', 1500); return; }
+  // the body turns to follow the crawl: sideways = horizontal, up/down = vertical
+  const ph = p1.h||P1_H;
+  const dir = dx!==0 ? 'h' : (dy!==0 ? 'v' : p1.dir);
+  const nx = Math.min(dir==='h' ? COLS-ph : COLS-1, Math.max(0, p1.gx+dx));
+  const ny = Math.min(dir==='v' ? ROWS-ph : ROWS-1, Math.max(0, p1.gy+dy));
+  if(!region1.has(nx+','+ny)) return; // head must stay on the plant
+  const trial = cellsOf1({gx:nx, gy:ny, h:ph, dir});
+  const blocked = others1.some(o=> cellsOf1(o).some(c=> trial.some(t=>t[0]===c[0]&&t[1]===c[1])));
+  if(blocked){ showToast('Another caterpillar is in the way.', 1400); return; }
+  p1.gx = nx; p1.gy = ny; p1.dir = dir;
+
+  const r = region1.get(nx+','+ny);
+  if(r==='bud' && !budNoteShown){
+    budNoteShown = true;
+    showToast('Milkweed buds, just about to open. Your favorite — double munch!', 3000);
+  }
+  // the second mite wakes the first time you set foot on a leaf that
+  // isn't the one you hatched on
+  if(!mite2Spawned && (r==='leaf2' || r==='leaf3')){
+    mite2Spawned = true;
+    const m = mites1[1];
+    m.home = r; m.alive = true;
+    if(r==='leaf2'){ m.gx=35; m.gy=16; } else { m.gx=3; m.gy=8; }
+    showToast('Something small and red stirs on this leaf...', 2200);
+  }
+}
+
+function startMite(m){
+  m.alive = false; // off the plant — it's on YOU now
+  mite = {presses:0, deadline: act1Frame + 240};
+  showToast('A clover mite crawls onto you! SHAKE — press S fast, 3 times!', 3200);
+  hint.textContent = 'SHAKE! press S (or the SHAKE button) ×3 — quickly!';
+}
+
+function tryShake(){
+  if(state!=='act1') return;
+  shakeWiggle = 8;
+  if(!mite){ showToast('You wiggle. Nothing clinging to you — for now.', 1200); return; }
+  mite.presses++;
+  if(mite.presses>=3){
+    munchFilled = Math.max(0, munchFilled-1);
+    renderHUD();
+    showToast('Flung it off! Only one munch lost.', 2400);
+    endMite();
+  }
+}
+
+function endMite(){
+  mite = null;
+  hint.textContent = 'crawl the stem between leaves · SPACE: eat · S: shake';
+}
+
+function updateAct1(){
+  if(shakeWiggle>0) shakeWiggle--;
+  // each mite patrols only its own leaf (never the stem, never the buds).
+  // It hunts you while you're on its leaf, and wanders when you're not.
+  if(!mite) mites1.forEach(m=>{
+    if(!m.alive) return;
+    if(++m.step < 22) return;
+    m.step = 0;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]]
+      .filter(d=>region1.get((m.gx+d[0])+','+(m.gy+d[1]))===m.home);
+    if(!dirs.length) return;
+    let pick;
+    if(region1.get(p1.gx+','+p1.gy)===m.home){
+      let bd = 1e9;
+      dirs.forEach(d=>{
+        const dist = Math.abs(m.gx+d[0]-p1.gx) + Math.abs(m.gy+d[1]-(p1.gy+1));
+        if(dist < bd){ bd = dist; pick = d; }
+      });
+    } else {
+      pick = dirs[(m.gx*7 + m.gy*13 + act1Frame) % dirs.length];
+    }
+    m.gx += pick[0]; m.gy += pick[1];
+    if(playerCells().some(c=>Math.abs(m.gx-c[0])<=1 && Math.abs(m.gy-c[1])<=1)){
+      startMite(m);
+    }
+  });
+  if(mite && act1Frame > mite.deadline){
+    munchFilled = Math.max(0, munchFilled-2);
+    renderHUD();
+    showToast('Too slow — the mite drank deep. Two munch lost.', 2600);
+    endMite();
+  }
+}
+
+function tryEat1(){
+  if(state!=='act1' && state!=='act2') return;
+  if(state==='act2' && hang2){ showToast('Hanging on silk — climb back up first (S).', 1500); return; }
+  const hx=p1.gx, hy=p1.gy, key=hx+','+hy;
+  const r = region1.get(key);
+  if(!r) return;
+  if(r==='stem'){ showToast('Nothing to munch on the bare stem.', 1600); return; }
+  if(others1.some(o=> cellsOf1(o).some(c=>Math.abs(hx-c[0])<=1 && Math.abs(hy-c[1])<=1))){
+    showToast('Too close to another caterpillar — give them a 1-cell border.');
+    return;
+  }
+  // a rich bud always fills two — with only one container left,
+  // the last munch has to come from a leaf
+  if(r==='bud' && TOTAL_MUNCH - munchFilled < 2){
+    showToast('Only one munch left — finish with a leaf bite, not a rich bud.', 2600);
+    return;
+  }
+  let bites=0;
+  if(r==='bud'){
+    // buds are small and dense: one dainty bite and the bud is gone
+    if(!eaten1.has(key)){ eaten1.add(key); bites=1; }
+  } else {
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=0;dy++){
+      const gx=hx+dx, gy=hy+dy, k=gx+','+gy;
+      const rr = region1.get(k);
+      if(!rr || rr==='stem' || rr==='bud' || eaten1.has(k)) continue;
+      if(others1.some(o=> cellsOf1(o).some(c=>c[0]===gx && c[1]===gy))) continue;
+      eaten1.add(k); bites++;
+    }
+  }
+  if(!bites){ showToast('Munched bare here. Crawl to a fresh spot.', 1600); return; }
+  const gain = r==='bud' ? 2 : 1;
+  munchFilled = Math.min(TOTAL_MUNCH, munchFilled+gain);
+  renderHUD();
+  if(r==='bud') showToast('Bud! Soft and sweet — two munch at once!', 1800);
+  if(munchFilled>=TOTAL_MUNCH){ state==='act2' ? finishAct2() : finishAct1(); }
+}
+
+function finishAct1(){
+  state='act1molt';
+  setGameplayControlsVisible(false);
+  hud.style.display='none';
+  hint.textContent='';
+  overlay.className = 'pos-top-left';
+  overlay.style.display='flex';
+  panelText.style.display='block';
+  panelText.textContent = 'Ten munches full. Your skin feels tight... too tight. Time to molt.';
+  continueBtn.classList.add('show');
+}
+
+/* ---- act 1 rendering ---- */
+function skyColor1(gy){
+  const t = gy/ROWS;
+  const a=[167,216,232], b=[247,201,160];
+  return `rgb(${Math.round(a[0]+(b[0]-a[0])*t)},${Math.round(a[1]+(b[1]-a[1])*t)},${Math.round(a[2]+(b[2]-a[2])*t)})`;
+}
+function drawAct1(){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#a7d8e8'); g.addColorStop(1,'#f7c9a0');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  px(140,8,12,12,'#ffe08a'); // morning sun
+
+  // stem + branches (draw under leaves)
+  ctx.fillStyle='#5c6b3a';
+  ctx.fillRect(19*CELL, 2*CELL, 2*CELL, 27*CELL);
+  ctx.fillRect(15*CELL, 21*CELL, 5*CELL, 2*CELL);
+  ctx.fillRect(20*CELL, 15*CELL, 4*CELL, 2*CELL);
+  ctx.fillRect(15*CELL, 7*CELL, 5*CELL, 2*CELL);
+
+  // leaves as smooth ellipses with a vein
+  const leaves=[[10,22,8,4.6],[29,16,8,4.6],[9,8,7,4.2]];
+  leaves.forEach(l=>{
+    ctx.fillStyle='#4f7942';
+    ctx.beginPath();
+    ctx.ellipse((l[0]+0.5)*CELL,(l[1]+0.5)*CELL,(l[2]+0.5)*CELL,(l[3]+0.5)*CELL,0,0,Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle='rgba(20,40,15,0.35)'; ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo((l[0]-l[2])*CELL+3,(l[1]+0.5)*CELL);
+    ctx.lineTo((l[0]+l[2])*CELL+1,(l[1]+0.5)*CELL);
+    ctx.stroke();
+  });
+
+  // bud cluster: bright, glossy orbs with pink tips — almost open
+  region1.forEach((r,k)=>{
+    if(r!=='bud' || eaten1.has(k)) return;
+    const [gx,gy]=k.split(',').map(Number);
+    px(gx*CELL,gy*CELL,CELL,CELL,'#d2ec9e');
+    if(gy<=3) px(gx*CELL+1,gy*CELL,2,2,'#f2b0d4');
+    if((gx+gy)%3===0) px(gx*CELL+2,gy*CELL+2,1,1,'#fff7d6');
+  });
+
+  // munched-away cells show sky through the leaf
+  eaten1.forEach(k=>{
+    const [gx,gy]=k.split(',').map(Number);
+    const coveredByPlayer = playerCells().some(c=>c[0]===gx && c[1]===gy);
+    const coveredByOther = others1.some(o=>cellsOf1(o).some(c=>c[0]===gx && c[1]===gy));
+    if(coveredByPlayer || coveredByOther) return;
+    px(gx*CELL,gy*CELL,CELL,CELL, skyColor1(gy));
+  });
+
+  // the two mites, hunting — tiny red specks with darting legs
+  mites1.forEach(m=>{
+    if(!m.alive) return;
+    const jig = Math.sin((act1Frame + m.gx*9)/5);
+    px(m.gx*CELL+1, m.gy*CELL+1+jig, 2,2, '#c04030');
+    px(m.gx*CELL,   m.gy*CELL+2, 1,1, '#802018');
+    px(m.gx*CELL+3, m.gy*CELL+2, 1,1, '#802018');
+  });
+
+  // neighbors: pale instar 1s and a banded instar 2, some upright, some lying flat
+  others1.forEach(o=>{
+    if(o.kind===1) drawWorm1(cellsOf1(o), ['#c9d8a8','#a8b888'], false);
+    else drawWorm1(cellsOf1(o), ['#2b2320','#e8c84a','#f4e9d8'], false);
+  });
+
+  // player: banded, turning with its crawl — instar 3 gets visibly long antennae.
+  // (hidden here while dangling on silk; the overlay draws that pose)
+  if(!(state==='act2' && hang2))
+    drawWorm1(playerCells(), ['#2b2320','#e8c84a','#f4e9d8'], true, state==='act2' ? 5 : 2);
+
+  // the clinging mite, jittering on your head
+  if(mite){
+    const jx = Math.sin(act1Frame/2)*1.5;
+    px(p1.gx*CELL+jx+1, p1.gy*CELL-2, 2,2, '#c04030');
+  }
+}
+
+/* =========================================================
+   ACT 2 — INSTAR 3
+   A fresh plant and a bigger appetite: 15 munch containers.
+   The new danger comes from the sky — a hunting paper wasp
+   sweeps over the plant. The instinct that saves you is real
+   monarch behavior: DROP off the leaf on a silk line (or press
+   yourself flat against the stem) until the shadow passes.
+   ========================================================= */
+function startAct2(){
+  state='act2';
+  buildPlant();
+  overlay.style.display='none';
+  panelText.style.display='none';
+  continueBtn.classList.remove('show');
+  TOTAL_MUNCH = 15;
+  munchFilled = 2;
+  hud.style.display='flex';
+  renderHUD();
+  setGameplayControlsVisible(true);
+  silkBtn.innerHTML = 'DROP<br>(S)';
+
+  p1 = {gx:10, gy:19, dir:'v', h:5}; // instar 3: longer body, real antennae
+  others1 = [
+    {gx:5,  gy:20, h:3, kind:1, dir:'h'}, // a late instar 1
+    {gx:8,  gy:6,  h:4, kind:2, dir:'v'}, // an instar 2 upright on leaf 3
+    {gx:28, gy:14, h:5, kind:2, dir:'h'}  // another big one along leaf 2
+  ];
+  eaten1 = new Set();
+  mite = null; mites1 = []; mite2Spawned = true; // the mites had their day
+  budNoteShown = true;
+  shakeWiggle = 0;
+  hang2 = false; sweepX = null; sweepHit = false;
+  act1Frame = 0;
+  nextSweep2 = 650; // first wasp pass, with a warning 2 seconds before
+  showToast('A fresh plant, a bigger hunger: 15 munches. And watch the sky...', 3400);
+  hint.textContent = 'eat and grow · S: DROP on silk when a shadow passes';
+}
+
+function tryDrop(){
+  if(state!=='act2') return;
+  hang2 = !hang2;
+  if(hang2){
+    silkBtn.innerHTML = 'CLIMB<br>(S)';
+    showToast('You drop on a silk line, dangling out of sight.', 1800);
+  } else {
+    silkBtn.innerHTML = 'DROP<br>(S)';
+    showToast('You climb the silk back to your perch.', 1500);
+  }
+}
+
+function updateAct2(){
+  if(shakeWiggle>0) shakeWiggle--;
+  if(act1Frame === nextSweep2-120){
+    showToast('A shadow blots out the sun... DROP (S) or hug the stem!', 3000);
+  }
+  if(act1Frame >= nextSweep2 && act1Frame < nextSweep2+200){
+    sweepX = -30 + (act1Frame-nextSweep2)/200 * (W+60);
+    const safe = hang2 || region1.get(p1.gx+','+p1.gy)==='stem';
+    if(!sweepHit && !safe && Math.abs(sweepX - (p1.gx*CELL+2)) < 12){
+      sweepHit = true;
+      munchFilled = Math.max(0, munchFilled-3);
+      renderHUD();
+      shakeWiggle = 14;
+      showToast('The wasp strikes! You tumble and cling on — three munch lost.', 3000);
+    }
+  } else if(act1Frame === nextSweep2+200){
+    sweepX = null; sweepHit = false;
+    nextSweep2 += 1000;
+    showToast('The sky is clear again.', 1600);
+  }
+}
+
+function drawAct2Overlay(){
+  // dangling on a silk line below the perch
+  if(hang2){
+    const hx = p1.gx*CELL+2, top = p1.gy*CELL;
+    ctx.strokeStyle='rgba(244,233,216,0.85)';
+    ctx.lineWidth=0.7;
+    ctx.beginPath(); ctx.moveTo(hx, top); ctx.lineTo(hx, top+16); ctx.stroke();
+    const bands=['#2b2320','#e8c84a','#f4e9d8'];
+    const sway = Math.sin(act1Frame/16)*1.2;
+    for(let i=0;i<5;i++) px(hx-2+sway, top+16+i*4, 4, 4, bands[i%3]);
+  }
+  // the wasp's shadow-column crossing the plant, wasp high overhead
+  if(sweepX!==null){
+    ctx.fillStyle='rgba(15,15,30,0.30)';
+    ctx.beginPath();
+    ctx.ellipse(sweepX, H/2, 20, H/2+10, 0, 0, Math.PI*2);
+    ctx.fill();
+    px(sweepX-3, 6, 7, 3, '#f0c83c');
+    px(sweepX-1, 6, 1, 3, '#2b2320');
+    px(sweepX+1, 6, 1, 3, '#2b2320');
+  }
+}
+
+function finishAct2(){
+  state='act2molt';
+  setGameplayControlsVisible(false);
+  hud.style.display='none';
+  hint.textContent='';
+  overlay.className = 'pos-top-left';
+  overlay.style.display='flex';
+  panelText.style.display='block';
+  panelText.textContent = 'Fifteen munches full, and the wasp never caught you. The tight-skin feeling again... molt number three.';
+  continueBtn.classList.add('show');
+}
+
+// draws any caterpillar body — horizontal or vertical — from its cells,
+// banded head to tail, with nubby antennae poking from the head
+function drawWorm1(cells, bands, isPlayer, ant){
+  ant = ant || 2; // antenna length: nubs for instar 2, real ones for instar 3
+  const wob = isPlayer && shakeWiggle>0 ? Math.sin(act1Frame*1.6)*1.5 : 0;
+  const xs = cells.map(c=>c[0]), ys = cells.map(c=>c[1]);
+  const x0 = Math.min(...xs)*CELL+wob, y0 = Math.min(...ys)*CELL;
+  px(x0-0.5, y0-0.5, (Math.max(...xs)-Math.min(...xs)+1)*CELL+1,
+     (Math.max(...ys)-Math.min(...ys)+1)*CELL+1, '#1c1d2e');
+  cells.forEach((c,i)=>{
+    const sx = c[0]*CELL+wob, sy = c[1]*CELL;
+    px(sx, sy, CELL, CELL, bands[i%bands.length]);
+    px(sx, sy, 1, CELL, 'rgba(255,255,255,0.25)');
+  });
+  const h = cells[0], horizontal = cells.length>1 && cells[1][1]===h[1];
+  const hx = h[0]*CELL+wob, hy = h[1]*CELL;
+  if(horizontal){
+    px(hx-ant, hy, ant,1, '#2b2320');
+    px(hx-ant, hy+CELL-1, ant,1, '#2b2320');
+  } else {
+    px(hx, hy-ant, 1,ant, '#2b2320');
+    px(hx+CELL-1, hy-ant, 1,ant, '#2b2320');
+  }
+}
+
+function drawMolt(t){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#a7d8e8'); g.addColorStop(1,'#f7c9a0');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  px(140,8,12,12,'#ffe08a');
+  // the well-munched plant — both leaves grow from the stem
+  ctx.fillStyle='#5c6b3a';
+  ctx.fillRect(76, 8, 8, 108);
+  drawLeafBlob(14,78,66,28,'#3d5a30'); // left leaf, tip meets the stem
+  drawLeafBlob(82,52,64,26,'#3d5a30'); // right leaf, attached at the stem
+  // the molting instar 2 clings vertically to the stem, breathing
+  const bob = Math.sin(t/14)*0.8;
+  const bands=['#2b2320','#e8c84a','#f4e9d8'];
+  for(let i=0;i<5;i++) px(77, 42+bob+i*4, 6, 4, bands[i%3]);
+  // little nubby antennae — next instar, they'll be long enough to notice
+  px(77, 39+bob, 1, 3, '#2b2320');
+  px(82, 39+bob, 1, 3, '#2b2320');
+  // its shed skin, crumpled at the base of the stem
+  px(72,112,10,3,'#6e5334');
+  px(74,110,6,2,'#8a6a42');
+  // a little instar 1 hangs upside down beneath the right leaf...
+  const bob2 = Math.sin(t/17+2)*0.8;
+  for(let i=0;i<3;i++) px(112, 76+bob2+i*3, 4, 3, i%2 ? '#a8b888':'#c9d8a8');
+  px(113, 85+bob2, 2, 2, '#2b2320'); // head pointing down
+  // ...beside the skin it wriggled out of, piled on the leaf
+  px(120,62,7,3,'#6e5334');
+  px(122,60,4,2,'#8a6a42');
 }
 
 /* =========================================================
@@ -814,28 +1309,44 @@ function gameLoop(){
     drawMorning(act0Frame++);
   } else if(state==='instar2wake'){
     drawInstar2Wake(act0Frame++);
+  } else if(state==='act1'){
+    act1Frame++;
+    updateAct1();
+    drawAct1();
+  } else if(state==='act2'){
+    act1Frame++;
+    updateAct2();
+    drawAct1();
+    drawAct2Overlay();
+  } else if(state==='act1molt' || state==='instar3wake' || state==='act2molt' || state==='instar4wake'){
+    drawMolt(act0Frame++);
   }
   requestAnimationFrame(gameLoop);
 }
 
 /* ---------- input ---------- */
+// dispatch by act: act0 silk, act1 (instar 2) shake, act2 (instar 3) silk-drop
+function doMove(dx,dy){ (state==='act1'||state==='act2') ? tryMove1(dx,dy) : tryMove(dx,dy); }
+function doEat(){ (state==='act1'||state==='act2') ? tryEat1() : tryEat(); }
+function doAction(){ state==='act1' ? tryShake() : (state==='act2' ? tryDrop() : trySilk()); }
+
 window.addEventListener('keydown', (e)=>{
   switch(e.key){
-    case 'ArrowUp': case 'w': case 'W': tryMove(0,-1); break;
-    case 'ArrowDown': tryMove(0,1); break;
-    case 'ArrowLeft': case 'a': case 'A': tryMove(-1,0); break;
-    case 'ArrowRight': case 'd': case 'D': tryMove(1,0); break;
-    case ' ': e.preventDefault(); tryEat(); break;
-    case 's': case 'S': trySilk(); break;
+    case 'ArrowUp': case 'w': case 'W': doMove(0,-1); break;
+    case 'ArrowDown': doMove(0,1); break;
+    case 'ArrowLeft': case 'a': case 'A': doMove(-1,0); break;
+    case 'ArrowRight': case 'd': case 'D': doMove(1,0); break;
+    case ' ': e.preventDefault(); doEat(); break;
+    case 's': case 'S': case 'x': case 'X': doAction(); break;
   }
 });
 
-document.getElementById('btnUp').addEventListener('click', ()=>tryMove(0,-1));
-document.getElementById('btnDown').addEventListener('click', ()=>tryMove(0,1));
-document.getElementById('btnLeft').addEventListener('click', ()=>tryMove(-1,0));
-document.getElementById('btnRight').addEventListener('click', ()=>tryMove(1,0));
-eatBtn.addEventListener('click', tryEat);
-silkBtn.addEventListener('click', trySilk);
+document.getElementById('btnUp').addEventListener('click', ()=>doMove(0,-1));
+document.getElementById('btnDown').addEventListener('click', ()=>doMove(0,1));
+document.getElementById('btnLeft').addEventListener('click', ()=>doMove(-1,0));
+document.getElementById('btnRight').addEventListener('click', ()=>doMove(1,0));
+eatBtn.addEventListener('click', doEat);
+silkBtn.addEventListener('click', doAction);
 
 /* ---------- boot ---------- */
 skipBtn.style.display='block';

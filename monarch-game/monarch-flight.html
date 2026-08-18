@@ -1,0 +1,343 @@
+<title>Monarch Flight</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&display=swap">
+<style>
+  /* Single committed theme: the garden at dusk. Every color painted explicitly. */
+  html,body{margin:0;padding:0;min-height:100%;}
+  body{
+    background:linear-gradient(180deg,#2f5233 0%,#28352a 45%,#2b2320 100%);
+    color:#f4e9d8;
+    font-family:"Pixelify Sans","Courier New",monospace;
+    display:flex;flex-direction:column;align-items:center;
+    min-height:100vh;
+    -webkit-user-select:none;user-select:none;
+  }
+  header{text-align:center;margin:18px 12px 10px;}
+  h1{
+    margin:0;font-size:clamp(26px,5vw,40px);font-weight:600;
+    color:#e8722c;letter-spacing:2px;
+    text-shadow:2px 2px 0 #2b2320;
+  }
+  .sub{margin:4px 0 0;font-size:clamp(12px,2.4vw,15px);color:#f4e9d8;opacity:.75;letter-spacing:.5px;}
+  #frame{
+    position:relative;
+    width:min(94vw, calc(76vh * 4 / 3));
+    aspect-ratio:4/3;
+    border:3px solid #2b2320;
+    box-shadow:0 6px 0 rgba(0,0,0,.45);
+    background:#2b2320;
+  }
+  canvas{
+    display:block;width:100%;height:100%;
+    image-rendering:pixelated;image-rendering:crisp-edges;
+    touch-action:none;
+  }
+  #overlay{
+    position:absolute;inset:0;
+    display:flex;align-items:center;justify-content:center;flex-direction:column;
+    text-align:center;padding:16px;pointer-events:none;
+  }
+  .panel{
+    background:rgba(20,16,14,.82);
+    border:2px solid #f4e9d8;
+    padding:14px 20px;max-width:86%;
+    font-size:clamp(13px,2.6vw,17px);line-height:1.55;letter-spacing:.5px;
+  }
+  .panel b{color:#e8722c;font-size:1.35em;letter-spacing:2px;display:block;margin-bottom:6px;}
+  .panel small{display:block;margin-top:8px;color:#f4e9d8;opacity:.7;}
+  #toast{
+    position:absolute;top:9%;left:50%;transform:translateX(-50%);
+    background:rgba(20,16,14,.88);border:1px solid #e8722c;
+    padding:5px 12px;font-size:clamp(11px,2.2vw,14px);letter-spacing:.5px;
+    max-width:85%;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none;
+  }
+  #toast.show{opacity:1;}
+  #eggBtn{
+    position:absolute;bottom:10px;right:10px;
+    background:#e8722c;color:#2b2320;
+    border:2px solid #2b2320;box-shadow:0 3px 0 #2b2320;
+    font-family:inherit;font-weight:600;font-size:clamp(12px,2.6vw,16px);
+    letter-spacing:1px;padding:10px 16px;cursor:pointer;display:none;
+  }
+  #eggBtn:active{transform:translateY(3px);box-shadow:0 0 0 #2b2320;}
+  .hint{
+    margin:12px 16px 24px;font-size:clamp(11px,2.2vw,13px);
+    color:#f4e9d8;opacity:.6;letter-spacing:.5px;text-align:center;line-height:1.6;
+  }
+  @media (prefers-reduced-motion: reduce){ #toast{transition:none;} }
+</style>
+
+<header>
+  <h1>MONARCH FLIGHT</h1>
+  <p class="sub">a Florida native garden game</p>
+</header>
+
+<div id="frame">
+  <canvas id="game" width="320" height="240"></canvas>
+  <div id="overlay"><div class="panel" id="panel"></div></div>
+  <div id="toast"></div>
+  <button id="eggBtn">&#x1F95A; LAY EGG</button>
+</div>
+
+<p class="hint">
+  Fly: arrow keys / WASD, or press and drag on the garden.<br>
+  Lay an egg on a milkweed (orange blooms): SPACE or the LAY EGG button.
+</p>
+
+<script>
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const W = 320, H = 240;
+const panel = document.getElementById('panel');
+const overlay = document.getElementById('overlay');
+const toastEl = document.getElementById('toast');
+const eggBtn = document.getElementById('eggBtn');
+
+const EGGS_TO_WIN = 6, MAX_ENERGY = 100;
+const DRAIN = 2.2, SIP = 22, STING = 18, EGG_COST = 10;
+
+// palette shared with the rest of the project
+const C = {
+  skyTop:'#a7d8e8', skyBot:'#f7c9a0', sun:'#ffe08a',
+  grassD:'#2f5233', grassM:'#4f7942', grassL:'#7a9b5c',
+  cream:'#f4e9d8', orange:'#e8722c', black:'#2b2320',
+  glow:'#fff7d6', waspY:'#f0c83c', red:'#c83228'
+};
+const FLOWERS = [
+  ['Firebush','#c83c28','#f08c3c'],
+  ['Blanketflower','#e68228','#96281e'],
+  ['Tropical Sage','#d2283c','#e67878'],
+  ['Dune Sunflower','#f0c846','#5a3c1e'],
+  ['Blazing Star','#aa6ec8','#d2aae6']
+];
+
+let state, player, flowers, milkweeds, wasps, eggs, msg, msgT, frame = 0, last = 0;
+const keys = {};
+let pointer = null; // {x,y} in game coords while held
+
+function toast(text, s = 2.2){
+  toastEl.textContent = text;
+  toastEl.classList.add('show');
+  msgT = s;
+}
+
+function newGarden(){
+  const spots = [];
+  let tries = 0;
+  while(spots.length < 14 && tries++ < 400){
+    const x = 20 + Math.random() * (W - 40);
+    const y = 60 + Math.random() * (H - 100);
+    if(spots.every(s => (x - s.x) ** 2 + (y - s.y) ** 2 > 900)) spots.push({x, y});
+  }
+  milkweeds = spots.slice(0, EGGS_TO_WIN + 1).map(s => ({...s, egg:false, sway:Math.random() * 6.28}));
+  flowers = spots.slice(EGGS_TO_WIN + 1).map(s => {
+    const k = FLOWERS[Math.floor(Math.random() * FLOWERS.length)];
+    return {...s, name:k[0], petal:k[1], center:k[2], nectar:true, regrow:0, sway:Math.random() * 6.28};
+  });
+  wasps = Array.from({length:3}, () => ({
+    cx:60 + Math.random() * (W - 120), cy:50 + Math.random() * (H - 120),
+    rx:30 + Math.random() * 40, ry:15 + Math.random() * 20,
+    sp:0.8 + Math.random() * 0.6, t:Math.random() * 6.28, x:0, y:0
+  }));
+}
+
+function reset(){
+  player = {x:W / 2, y:H / 2, vx:0, vy:0, energy:MAX_ENERGY, hurt:0};
+  eggs = 0; msgT = 0;
+  newGarden();
+}
+
+function setState(s){
+  state = s;
+  eggBtn.style.display = s === 'play' ? 'block' : 'none';
+  overlay.style.display = s === 'play' ? 'none' : 'flex';
+  if(s === 'title') panel.innerHTML =
+    '<b>MONARCH FLIGHT</b>You are a mother monarch. Sip nectar from the ' +
+    'garden’s flowers, dodge the wasps, and lay your ' + EGGS_TO_WIN +
+    ' eggs on milkweed — the orange blooms.<small>tap here or press ENTER to begin</small>';
+  if(s === 'win') panel.innerHTML =
+    '<b>THE CYCLE CONTINUES</b>All ' + EGGS_TO_WIN + ' eggs are safe on milkweed. ' +
+    'In three days they hatch, and tiny caterpillars begin their own hungry adventure.' +
+    '<small>tap here or press ENTER to play again</small>';
+  if(s === 'gameover') panel.innerHTML =
+    '<b>OUT OF NECTAR</b>The garden needs more flowers… and you needed more sips. ' +
+    'Eggs laid: ' + eggs + '/' + EGGS_TO_WIN + '.<small>tap here or press ENTER to try again</small>';
+}
+
+function layEgg(){
+  if(state !== 'play') return;
+  for(const m of milkweeds){
+    if(!m.egg && (player.x - m.x) ** 2 + (player.y - m.y) ** 2 < 196){
+      if(player.energy <= EGG_COST){ toast('Too tired to lay — sip some nectar first!'); return; }
+      m.egg = true; eggs++; player.energy -= EGG_COST;
+      toast('Egg laid on the milkweed!');
+      if(eggs >= EGGS_TO_WIN) setState('win');
+      return;
+    }
+  }
+  toast('Eggs only go on milkweed — the orange blooms!');
+}
+
+function advance(){ // start or restart from a non-play state
+  if(state === 'title'){ setState('play'); }
+  else if(state === 'win' || state === 'gameover'){ reset(); setState('play'); }
+}
+
+function update(dt){
+  const p = player, acc = 260 * dt;
+  if(keys.ArrowLeft || keys.a) p.vx -= acc;
+  if(keys.ArrowRight || keys.d) p.vx += acc;
+  if(keys.ArrowUp || keys.w) p.vy -= acc;
+  if(keys.ArrowDown || keys.s) p.vy += acc;
+  if(pointer){
+    const dx = pointer.x - p.x, dy = pointer.y - p.y, d = Math.hypot(dx, dy);
+    if(d > 5){ p.vx += dx / d * acc; p.vy += dy / d * acc; }
+  }
+  p.vx *= 0.86; p.vy *= 0.86;
+  p.x = Math.max(6, Math.min(W - 6, p.x + p.vx * dt));
+  p.y = Math.max(6, Math.min(H - 30, p.y + p.vy * dt));
+  p.energy -= DRAIN * dt;
+  if(p.hurt > 0) p.hurt -= dt;
+
+  for(const f of flowers){
+    f.sway += dt * 1.5;
+    if(!f.nectar && (f.regrow -= dt) <= 0) f.nectar = true;
+    if(f.nectar && p.energy < MAX_ENERGY - 2 && (p.x - f.x) ** 2 + (p.y - f.y) ** 2 < 100){
+      f.nectar = false; f.regrow = 8 + Math.random() * 6;
+      p.energy = Math.min(MAX_ENERGY, p.energy + SIP);
+      toast('Sweet ' + f.name + ' nectar!', 1.6);
+    }
+  }
+  for(const m of milkweeds) m.sway += dt * 1.2;
+  for(const ws of wasps){
+    ws.t += dt * ws.sp;
+    ws.x = ws.cx + Math.cos(ws.t) * ws.rx;
+    ws.y = ws.cy + Math.sin(ws.t * 1.7) * ws.ry;
+    if(p.hurt <= 0 && (p.x - ws.x) ** 2 + (p.y - ws.y) ** 2 < 64){
+      p.energy -= STING; p.hurt = 1.5;
+      p.vx += (p.x - ws.x) * 14; p.vy += (p.y - ws.y) * 14;
+      toast('Ouch — a wasp!', 1.6);
+    }
+  }
+  if(msgT > 0 && (msgT -= dt) <= 0) toastEl.classList.remove('show');
+  if(p.energy <= 0) setState('gameover');
+}
+
+/* ---------- drawing ---------- */
+function px(x, y, w, h, c){ ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+
+function drawBackground(){
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.skyTop); g.addColorStop(1, C.skyBot);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C.sun; ctx.beginPath(); ctx.arc(270, 34, 14, 0, 6.29); ctx.fill();
+  px(0, H - 26, W, 26, C.grassM);
+  px(0, H - 26, W, 3, C.grassD);
+}
+function drawFlower(f){
+  const wob = Math.sin(f.sway) * 1.5;
+  ctx.strokeStyle = C.grassD; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(f.x, f.y + 14); ctx.lineTo(f.x + wob, f.y); ctx.stroke();
+  for(let i = 0; i < 6; i++){
+    const a = i * 1.047 + f.sway * .05;
+    ctx.fillStyle = f.petal;
+    ctx.beginPath(); ctx.arc(f.x + wob + Math.cos(a) * 4, f.y + Math.sin(a) * 4, 2, 0, 6.29); ctx.fill();
+  }
+  ctx.fillStyle = f.center;
+  ctx.beginPath(); ctx.arc(f.x + wob, f.y, 2, 0, 6.29); ctx.fill();
+  if(f.nectar) px(f.x + wob, f.y - 2, 1, 1, C.glow);
+}
+function drawMilkweed(m){
+  const wob = Math.sin(m.sway) * 1.5;
+  ctx.strokeStyle = C.grassM; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(m.x, m.y + 16); ctx.lineTo(m.x + wob, m.y - 2); ctx.stroke();
+  ctx.fillStyle = C.grassL;
+  for(const ly of [4, 9, 14]){
+    ctx.beginPath(); ctx.ellipse(m.x - 3.5 + wob, m.y + ly, 3.5, 2, 0, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(m.x + 3.5 + wob, m.y + ly, 3.5, 2, 0, 0, 6.29); ctx.fill();
+  }
+  ctx.fillStyle = C.orange;
+  for(let i = 0; i < 5; i++){
+    const a = i * 1.257;
+    ctx.beginPath(); ctx.arc(m.x + wob + Math.cos(a) * 3, m.y - 3 + Math.sin(a) * 2, 2, 0, 6.29); ctx.fill();
+  }
+  if(m.egg){
+    ctx.fillStyle = C.glow;
+    ctx.beginPath(); ctx.arc(m.x - 4 + wob, m.y + 9, 2, 0, 6.29); ctx.fill();
+  }
+}
+function drawWasp(ws){
+  const x = Math.round(ws.x), y = Math.round(ws.y);
+  const wy = (frame >> 1) % 2 ? y - 2 : y - 3;
+  ctx.strokeStyle = '#dcdce6'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x - 2, wy); ctx.lineTo(x - 5, wy - 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 2, wy); ctx.lineTo(x + 5, wy - 2); ctx.stroke();
+  px(x - 3, y - 1, 7, 4, C.waspY);
+  px(x - 1, y - 1, 1, 4, C.black);
+  px(x + 2, y - 1, 1, 4, C.black);
+  px(x - 4, y, 1, 1, C.black);
+}
+function drawButterfly(){
+  const p = player, x = Math.round(p.x), y = Math.round(p.y);
+  if(p.hurt > 0 && (frame >> 2) % 2) return; // blink while recovering
+  const w = (frame >> 2) % 2 ? 4 : 6;
+  px(x - w - 1, y - 4, w + 1, 8, C.black);
+  px(x, y - 4, w + 1, 8, C.black);
+  px(x - w, y - 3, w, 6, C.orange);
+  px(x, y - 3, w, 6, C.orange);
+  px(x - w, y - 2, 1, 1, C.cream);
+  px(x + w - 1, y - 2, 1, 1, C.cream);
+  px(x - 1, y - 4, 2, 9, C.black);
+}
+function drawHUD(){
+  px(5, 5, 84, 9, C.black);
+  const fill = Math.max(0, Math.round(80 * player.energy / MAX_ENERGY));
+  px(7, 7, fill, 5, player.energy > 25 ? C.orange : C.red);
+  ctx.font = '8px "Pixelify Sans", monospace';
+  ctx.fillStyle = C.black;
+  ctx.fillText('NECTAR', 93, 13);
+  ctx.fillText('EGGS ' + eggs + '/' + EGGS_TO_WIN, W - 52, 13);
+  for(let i = 0; i < EGGS_TO_WIN; i++)
+    px(W - 52 + i * 8, 16, 5, 5, i < eggs ? C.glow : 'rgba(43,35,32,0.35)');
+}
+
+function loop(ts){
+  const dt = Math.min((ts - last) / 1000 || 0, 0.1);
+  last = ts; frame++;
+  if(state === 'play') update(dt);
+  drawBackground();
+  flowers.forEach(drawFlower);
+  milkweeds.forEach(drawMilkweed);
+  wasps.forEach(drawWasp);
+  drawButterfly();
+  if(state === 'play') drawHUD();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- input ---------- */
+addEventListener('keydown', e => {
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true;
+  if(e.key === 'Enter') advance();
+  if(e.key === ' ') layEgg();
+});
+addEventListener('keyup', e => { keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false; });
+
+function gamePoint(e){
+  const r = cv.getBoundingClientRect();
+  return {x:(e.clientX - r.left) / r.width * W, y:(e.clientY - r.top) / r.height * H};
+}
+cv.addEventListener('pointerdown', e => {
+  if(state !== 'play'){ advance(); return; }
+  cv.setPointerCapture(e.pointerId);
+  pointer = gamePoint(e);
+});
+cv.addEventListener('pointermove', e => { if(pointer) pointer = gamePoint(e); });
+cv.addEventListener('pointerup', () => { pointer = null; });
+cv.addEventListener('pointercancel', () => { pointer = null; });
+overlay.addEventListener('click', advance);
+eggBtn.addEventListener('click', layEgg);
+
+reset();
+setState('title');
+requestAnimationFrame(loop);
+</script>
