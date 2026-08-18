@@ -215,7 +215,7 @@ function setGameplayControlsVisible(visible){
 }
 setGameplayControlsVisible(false); // hidden until Act 0 actually starts
 
-let state = 'comic'; // comic -> act0 -> storm -> morning -> instar2wake
+let state = 'comic'; // comic -> act0 -> storm -> morning -> instar2wake -> act1 -> act1molt -> instar3wake
 let comicIndex = 0;
 let frame = 0;
 
@@ -234,7 +234,7 @@ function px(x,y,w,h,color){
 function clear(color){ px(0,0,W,H,color); }
 
 /* ---------- MUNCH HUD ---------- */
-const TOTAL_MUNCH = 5;
+let TOTAL_MUNCH = 5;   // grows to 10 in instar 2
 let munchFilled = 1; // egg gift from mother
 
 function leafletSVG(filled){
@@ -779,14 +779,21 @@ function drawMorning(t){
 continueBtn.addEventListener('click', ()=>{
   if(state==='morning'){
     startInstar2Wake();
+  } else if(state==='instar2wake'){
+    startAct1();
+  } else if(state==='act1molt'){
+    state='instar3wake';
+    panelText.textContent = 'INSTAR 3 begins... (more to come)';
+    continueBtn.classList.remove('show');
   }
 });
 
-/* ---------- INSTAR 2 WAKE (build stops here) ---------- */
+/* ---------- INSTAR 2 WAKE ---------- */
 function startInstar2Wake(){
   state='instar2wake';
   continueBtn.classList.remove('show');
-  panelText.textContent = 'HUNGRY. Instar 2 begins... (more to come)';
+  panelText.textContent = 'HUNGRY. And bigger. Instar 2 begins.';
+  setTimeout(()=>{ if(state==='instar2wake') continueBtn.classList.add('show'); }, 900);
 }
 function drawInstar2Wake(t){
   clear('#f7c9a0');
@@ -797,6 +804,290 @@ function drawInstar2Wake(t){
   px(70,64+bob,16,6,'#e8722c');
   px(70,62+bob,3,3,'#2b2320');
   px(83,62+bob,3,3,'#2b2320');
+}
+
+/* =========================================================
+   ACT 1 — INSTAR 2
+   A whole milkweed plant: stem, three leaves, and the flower
+   buds at the top (just about to open — a favorite food, worth
+   double munch). Two clover mites lurk; SHAKE fast to lose one
+   munch instead of two. Other instars share the plant.
+   ========================================================= */
+const P1_H = 4; // instar 2 body: 1 cell wide x 4 tall
+let p1, others1, eaten1, region1, mite, miteAmbient, pendingMite;
+let visited1, act1Frame, budNoteShown, shakeWiggle;
+
+function inEllipse(gx,gy,cx,cy,rx,ry){
+  const ex=(gx-cx)/rx, ey=(gy-cy)/ry;
+  return ex*ex+ey*ey <= 1;
+}
+
+function buildPlant(){
+  region1 = new Map(); // "gx,gy" -> 'bud'|'leaf1'|'leaf2'|'leaf3'|'stem'
+  const mark=(gx,gy,r)=>{
+    if(gx>=0&&gy>=0&&gx<COLS&&gy<ROWS && !region1.has(gx+','+gy)) region1.set(gx+','+gy,r);
+  };
+  // bud cluster first so it wins the top of the stem
+  for(let gx=16;gx<=24;gx++)for(let gy=1;gy<=6;gy++)
+    if(inEllipse(gx,gy,20,3.4,3.4,2.7)) mark(gx,gy,'bud');
+  for(let gx=0;gx<COLS;gx++)for(let gy=0;gy<ROWS;gy++){
+    if(inEllipse(gx,gy,10,22,8,4.6)) mark(gx,gy,'leaf1');
+    else if(inEllipse(gx,gy,29,16,8,4.6)) mark(gx,gy,'leaf2');
+    else if(inEllipse(gx,gy,9,8,7,4.2)) mark(gx,gy,'leaf3');
+  }
+  for(let gy=2;gy<=28;gy++){ mark(19,gy,'stem'); mark(20,gy,'stem'); }
+  for(let gx=15;gx<=19;gx++){ mark(gx,21,'stem'); mark(gx,22,'stem'); } // branch to leaf1
+  for(let gx=20;gx<=23;gx++){ mark(gx,15,'stem'); mark(gx,16,'stem'); } // branch to leaf2
+  for(let gx=15;gx<=19;gx++){ mark(gx,7,'stem');  mark(gx,8,'stem');  } // branch to leaf3
+}
+
+function startAct1(){
+  state='act1';
+  buildPlant();
+  overlay.style.display='none';
+  panelText.style.display='none';
+  continueBtn.classList.remove('show');
+  TOTAL_MUNCH = 10;      // instar 2: double the containers
+  munchFilled = 1;       // woke up hungry
+  hud.style.display='flex';
+  renderHUD();
+  setGameplayControlsVisible(true);
+  silkBtn.innerHTML = 'SHAKE<br>(S)';
+
+  p1 = {gx:10, gy:19};   // head cell; body hangs below
+  others1 = [
+    {gx:5,  gy:21, h:3, kind:1}, // instar 1 on leaf 1
+    {gx:8,  gy:7,  h:3, kind:1}, // instar 1 on leaf 3
+    {gx:31, gy:13, h:4, kind:2}  // another instar 2 on leaf 2
+  ];
+  eaten1 = new Set();
+  mite = null; pendingMite = false;
+  visited1 = {leaf2:false, bud:false};
+  budNoteShown = false;
+  shakeWiggle = 0;
+  act1Frame = 0;
+  showToast('A whole plant to explore. The stem connects every leaf.', 3000);
+  hint.textContent = 'crawl the stem between leaves · SPACE: eat · S: shake';
+}
+
+function box1(o){ return {x0:o.gx, y0:o.gy, x1:o.gx, y1:o.gy+o.h-1}; }
+function buffer1(o){ const b=box1(o); return {x0:b.x0-1,y0:b.y0-1,x1:b.x1+1,y1:b.y1+1}; }
+
+function tryMove1(dx,dy){
+  if(state!=='act1') return;
+  const nx = Math.min(COLS-1, Math.max(0, p1.gx+dx));
+  const ny = Math.min(ROWS-P1_H, Math.max(0, p1.gy+dy));
+  if(!region1.has(nx+','+ny)) return; // head must stay on the plant
+  const blocked = others1.some(o=>{
+    const b = box1(o);
+    return nx>=b.x0-0 && nx<=b.x1 && ny+P1_H-1>=b.y0 && ny<=b.y1 && nx===o.gx;
+  });
+  if(blocked){ showToast('Another caterpillar is in the way.', 1400); return; }
+  p1.gx = nx; p1.gy = ny;
+
+  const r = region1.get(nx+','+ny);
+  if(r==='leaf2' && !visited1.leaf2){
+    visited1.leaf2 = true;
+    startMite();
+  }
+  if(r==='bud'){
+    if(!budNoteShown){
+      budNoteShown = true;
+      showToast('Milkweed buds, just about to open. Your favorite — double munch!', 3000);
+    }
+    if(!visited1.bud){
+      visited1.bud = true;
+      if(mite) pendingMite = true; else startMite();
+    }
+  }
+}
+
+function startMite(){
+  mite = {presses:0, deadline: act1Frame + 240};
+  showToast('A clover mite crawls onto you! SHAKE — press S fast, 3 times!', 3200);
+  hint.textContent = 'SHAKE! press S (or the SHAKE button) ×3 — quickly!';
+}
+
+function tryShake(){
+  if(state!=='act1') return;
+  shakeWiggle = 8;
+  if(!mite){ showToast('You wiggle. Nothing clinging to you — for now.', 1200); return; }
+  mite.presses++;
+  if(mite.presses>=3){
+    munchFilled = Math.max(0, munchFilled-1);
+    renderHUD();
+    showToast('Flung it off! Only one munch lost.', 2400);
+    endMite();
+  }
+}
+
+function endMite(){
+  mite = null;
+  hint.textContent = 'crawl the stem between leaves · SPACE: eat · S: shake';
+  if(pendingMite){ pendingMite=false; setTimeout(()=>{ if(state==='act1' && !mite) startMite(); }, 1200); }
+}
+
+function updateAct1(){
+  if(shakeWiggle>0) shakeWiggle--;
+  if(mite && act1Frame > mite.deadline){
+    munchFilled = Math.max(0, munchFilled-2);
+    renderHUD();
+    showToast('Too slow — the mite drank deep. Two munch lost.', 2600);
+    endMite();
+  }
+}
+
+function tryEat1(){
+  if(state!=='act1') return;
+  const hx=p1.gx, hy=p1.gy, key=hx+','+hy;
+  const r = region1.get(key);
+  if(!r) return;
+  if(r==='stem'){ showToast('Nothing to munch on the bare stem.', 1600); return; }
+  if(others1.some(o=>{ const b=buffer1(o); return hx>=b.x0&&hx<=b.x1&&hy>=b.y0&&hy<=b.y1; })){
+    showToast('Too close to another caterpillar — give them a 1-cell border.');
+    return;
+  }
+  let bites=0;
+  for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=0;dy++){
+    const gx=hx+dx, gy=hy+dy, k=gx+','+gy;
+    const rr = region1.get(k);
+    if(!rr || rr==='stem' || eaten1.has(k)) continue;
+    if(others1.some(o=>gx===o.gx && gy>=o.gy && gy<o.gy+o.h)) continue;
+    eaten1.add(k); bites++;
+  }
+  if(!bites){ showToast('Munched bare here. Crawl to a fresh spot.', 1600); return; }
+  const gain = r==='bud' ? 2 : 1;
+  munchFilled = Math.min(TOTAL_MUNCH, munchFilled+gain);
+  renderHUD();
+  if(r==='bud') showToast('Bud! Soft and sweet — two munch at once!', 1800);
+  if(munchFilled>=TOTAL_MUNCH) finishAct1();
+}
+
+function finishAct1(){
+  state='act1molt';
+  setGameplayControlsVisible(false);
+  hud.style.display='none';
+  hint.textContent='';
+  overlay.className = 'pos-top-left';
+  overlay.style.display='flex';
+  panelText.style.display='block';
+  panelText.textContent = 'Ten munches full. Your skin feels tight... too tight. Time to molt.';
+  continueBtn.classList.add('show');
+}
+
+/* ---- act 1 rendering ---- */
+function skyColor1(gy){
+  const t = gy/ROWS;
+  const a=[167,216,232], b=[247,201,160];
+  return `rgb(${Math.round(a[0]+(b[0]-a[0])*t)},${Math.round(a[1]+(b[1]-a[1])*t)},${Math.round(a[2]+(b[2]-a[2])*t)})`;
+}
+function drawAct1(){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#a7d8e8'); g.addColorStop(1,'#f7c9a0');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  px(140,8,12,12,'#ffe08a'); // morning sun
+
+  // stem + branches (draw under leaves)
+  ctx.fillStyle='#5c6b3a';
+  ctx.fillRect(19*CELL, 2*CELL, 2*CELL, 27*CELL);
+  ctx.fillRect(15*CELL, 21*CELL, 5*CELL, 2*CELL);
+  ctx.fillRect(20*CELL, 15*CELL, 4*CELL, 2*CELL);
+  ctx.fillRect(15*CELL, 7*CELL, 5*CELL, 2*CELL);
+
+  // leaves as smooth ellipses with a vein
+  const leaves=[[10,22,8,4.6],[29,16,8,4.6],[9,8,7,4.2]];
+  leaves.forEach(l=>{
+    ctx.fillStyle='#4f7942';
+    ctx.beginPath();
+    ctx.ellipse((l[0]+0.5)*CELL,(l[1]+0.5)*CELL,(l[2]+0.5)*CELL,(l[3]+0.5)*CELL,0,0,Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle='rgba(20,40,15,0.35)'; ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo((l[0]-l[2])*CELL+3,(l[1]+0.5)*CELL);
+    ctx.lineTo((l[0]+l[2])*CELL+1,(l[1]+0.5)*CELL);
+    ctx.stroke();
+  });
+
+  // bud cluster: pale green orbs with pink tips
+  region1.forEach((r,k)=>{
+    if(r!=='bud' || eaten1.has(k)) return;
+    const [gx,gy]=k.split(',').map(Number);
+    px(gx*CELL,gy*CELL,CELL,CELL,'#b4cc96');
+    if(gy<=3) px(gx*CELL+1,gy*CELL,2,2,'#d9a6c0');
+  });
+
+  // munched-away cells show sky through the leaf
+  eaten1.forEach(k=>{
+    const [gx,gy]=k.split(',').map(Number);
+    const coveredByPlayer = gx===p1.gx && gy>=p1.gy && gy<p1.gy+P1_H;
+    const coveredByOther = others1.some(o=>gx===o.gx && gy>=o.gy && gy<o.gy+o.h);
+    if(coveredByPlayer || coveredByOther) return;
+    px(gx*CELL,gy*CELL,CELL,CELL, skyColor1(gy));
+  });
+
+  // ambient mites creep along the stem until their event is spent
+  if(!visited1.leaf2){
+    const my = 2+((act1Frame/7)%26);
+    px(19*CELL+1, my*CELL, 2,2, '#c04030');
+  }
+  if(!visited1.bud){
+    const my = 2+((act1Frame/9+13)%26);
+    px(20*CELL+1, my*CELL, 2,2, '#c04030');
+  }
+
+  // neighbors: pale instar 1s and a banded instar 2
+  others1.forEach(o=>{
+    if(o.kind===1) drawCaterpillar(o.gx,o.gy,'#c9d8a8','#a8b888');
+    else drawCat2(o.gx,o.gy,false);
+  });
+
+  // player: banded instar 2, wiggling when shaking
+  drawCat2(p1.gx,p1.gy,true);
+
+  // the clinging mite, jittering on your head
+  if(mite){
+    const jx = Math.sin(act1Frame/2)*1.5;
+    px(p1.gx*CELL+jx+1, p1.gy*CELL-2, 2,2, '#c04030');
+  }
+}
+
+// instar 2 look: black / yellow / white banding
+function drawCat2(gx,gy,isPlayer){
+  const wob = isPlayer && shakeWiggle>0 ? Math.sin(act1Frame*1.6)*1.5 : 0;
+  const x = gx*CELL+wob, y = gy*CELL;
+  const bands = ['#2b2320','#e8c84a','#f4e9d8','#2b2320'];
+  px(x-0.5,y-0.5,CELL+1,P1_H*CELL+1,'#1c1d2e');
+  for(let seg=0; seg<P1_H; seg++){
+    px(x, y+seg*CELL, CELL, CELL, bands[seg%bands.length]);
+    px(x, y+seg*CELL, 1, CELL, 'rgba(255,255,255,0.25)');
+    if(seg>0){
+      px(x-1, y+seg*CELL+CELL-1, 1,1, '#2b2320');
+      px(x+CELL, y+seg*CELL+CELL-1, 1,1, '#2b2320');
+    }
+  }
+  // tiny front tentacles — instar 2's new feature
+  px(x, y-2, 1,2, '#2b2320');
+  px(x+CELL-1, y-2, 1,2, '#2b2320');
+}
+
+function drawMolt(t){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#a7d8e8'); g.addColorStop(1,'#f7c9a0');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  px(140,8,12,12,'#ffe08a');
+  // the well-munched plant, quieter now
+  ctx.fillStyle='#5c6b3a';
+  ctx.fillRect(19*CELL, 2*CELL, 2*CELL, 27*CELL);
+  drawLeafBlob(10,80,70,30,'#3d5a30');
+  drawLeafBlob(90,50,60,26,'#3d5a30');
+  // resting caterpillar under a leaf, breathing
+  const bob = Math.sin(t/14)*0.8;
+  px(60,70+bob,18,6,'#e8c84a');
+  px(60,70+bob,4,6,'#2b2320');
+  px(74,70+bob,4,6,'#2b2320');
+  // shed-skin shimmer beside it
+  ctx.strokeStyle='rgba(244,233,216,0.6)'; ctx.lineWidth=0.6;
+  ctx.beginPath(); ctx.ellipse(88,76,7,3,0,0,Math.PI*2); ctx.stroke();
 }
 
 /* =========================================================
@@ -814,28 +1105,39 @@ function gameLoop(){
     drawMorning(act0Frame++);
   } else if(state==='instar2wake'){
     drawInstar2Wake(act0Frame++);
+  } else if(state==='act1'){
+    act1Frame++;
+    updateAct1();
+    drawAct1();
+  } else if(state==='act1molt' || state==='instar3wake'){
+    drawMolt(act0Frame++);
   }
   requestAnimationFrame(gameLoop);
 }
 
 /* ---------- input ---------- */
+// dispatch by act: act0 uses silk, act1 (instar 2) uses shake
+function doMove(dx,dy){ state==='act1' ? tryMove1(dx,dy) : tryMove(dx,dy); }
+function doEat(){ state==='act1' ? tryEat1() : tryEat(); }
+function doAction(){ state==='act1' ? tryShake() : trySilk(); }
+
 window.addEventListener('keydown', (e)=>{
   switch(e.key){
-    case 'ArrowUp': case 'w': case 'W': tryMove(0,-1); break;
-    case 'ArrowDown': tryMove(0,1); break;
-    case 'ArrowLeft': case 'a': case 'A': tryMove(-1,0); break;
-    case 'ArrowRight': case 'd': case 'D': tryMove(1,0); break;
-    case ' ': e.preventDefault(); tryEat(); break;
-    case 's': case 'S': trySilk(); break;
+    case 'ArrowUp': case 'w': case 'W': doMove(0,-1); break;
+    case 'ArrowDown': doMove(0,1); break;
+    case 'ArrowLeft': case 'a': case 'A': doMove(-1,0); break;
+    case 'ArrowRight': case 'd': case 'D': doMove(1,0); break;
+    case ' ': e.preventDefault(); doEat(); break;
+    case 's': case 'S': case 'x': case 'X': doAction(); break;
   }
 });
 
-document.getElementById('btnUp').addEventListener('click', ()=>tryMove(0,-1));
-document.getElementById('btnDown').addEventListener('click', ()=>tryMove(0,1));
-document.getElementById('btnLeft').addEventListener('click', ()=>tryMove(-1,0));
-document.getElementById('btnRight').addEventListener('click', ()=>tryMove(1,0));
-eatBtn.addEventListener('click', tryEat);
-silkBtn.addEventListener('click', trySilk);
+document.getElementById('btnUp').addEventListener('click', ()=>doMove(0,-1));
+document.getElementById('btnDown').addEventListener('click', ()=>doMove(0,1));
+document.getElementById('btnLeft').addEventListener('click', ()=>doMove(-1,0));
+document.getElementById('btnRight').addEventListener('click', ()=>doMove(1,0));
+eatBtn.addEventListener('click', doEat);
+silkBtn.addEventListener('click', doAction);
 
 /* ---------- boot ---------- */
 skipBtn.style.display='block';
