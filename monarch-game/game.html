@@ -242,7 +242,7 @@ function leafletSVG(filled){
   const veinColor = filled ? 'rgba(244,233,216,0.7)' : 'transparent';
   return `<svg viewBox="0 0 16 16">
     <path d="M8 1 C 3 3, 1 8, 8 15 C 15 8, 13 3, 8 1 Z"
-      fill="${fillColor}" stroke="#f4e9d8" stroke-width="1.4"/>
+      fill="${fillColor}" stroke="#5b3a21" stroke-width="1.4"/>
     <path d="M8 3 L 8 13" stroke="${veinColor}" stroke-width="0.8"/>
   </svg>`;
 }
@@ -707,7 +707,7 @@ function drawCaterpillar(gx,gy,baseColor,shadeColor){
 }
 
 /* ---------- STORM CUTSCENE ---------- */
-let stormFrame, flashTimes;
+let stormFrame, flashTimes, boltT, boltX;
 function startStorm(){
   state = 'storm';
   overlay.className = '';
@@ -716,8 +716,9 @@ function startStorm(){
   hint.textContent='';
   setGameplayControlsVisible(false);
   stormFrame = 0;
-  // irregular, spaced-out flashes for a slower, more dramatic build
-  flashTimes = [20,21,22,55,56,95,96,97,140,141,190,191,192];
+  boltT = 0;
+  // irregular, spaced-out strikes for a slower, more dramatic build
+  flashTimes = [20,55,95,140,190];
 }
 function drawStorm(){
   clear('#1c1d2e');
@@ -728,12 +729,19 @@ function drawStorm(){
     const ry = (i*7 + stormFrame*4)%H;
     ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(rx-3,ry+9); ctx.stroke();
   }
+  // jagged yellow bolts instead of full-screen flashes — no strobing,
+  // safe for photosensitive players
   if(flashTimes.includes(stormFrame)){
-    // brief jolt: white flash with a small screen-shake feel via offset re-flash
-    clear('#eef0ff');
+    boltT = 10;
+    boltX = 20 + (stormFrame*37) % (W-40);
+  }
+  if(boltT > 0){
+    drawBolt(boltX, 10-boltT);
+    boltT--;
   }
   stormFrame++;
   if(stormFrame===210){
+    boltT = 0;
     overlay.className = 'pos-top-left';
     panelText.style.display='block';
     panelText.textContent = 'The storm rages through the night.';
@@ -742,6 +750,24 @@ function drawStorm(){
   if(stormFrame===370){
     startMorning();
   }
+}
+// a jagged bolt drawn as lines only — luminance stays local, never full-screen
+function drawBolt(x, age){
+  const fade = Math.max(0, 1 - age*0.1);
+  let bx = x, by = 0;
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  for(let i=1; i<=7; i++){
+    bx += (i%2===0 ? 1 : -1) * (3 + ((x*i*7)%6));
+    by += 9 + ((x*i*13)%5);
+    ctx.lineTo(bx, by);
+  }
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = `rgba(255,224,138,${0.85*fade})`;
+  ctx.stroke();
+  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = `rgba(255,245,200,${0.9*fade})`;
+  ctx.stroke();
 }
 
 /* ---------- MORNING SAFE SCENE ---------- */
@@ -814,8 +840,8 @@ function drawInstar2Wake(t){
    munch instead of two. Other instars share the plant.
    ========================================================= */
 const P1_H = 4; // instar 2 body: 1 cell wide x 4 tall
-let p1, others1, eaten1, region1, mite, miteAmbient, pendingMite;
-let visited1, act1Frame, budNoteShown, shakeWiggle;
+let p1, others1, eaten1, region1, mite, mites1;
+let act1Frame, budNoteShown, shakeWiggle;
 
 function inEllipse(gx,gy,cx,cy,rx,ry){
   const ex=(gx-cx)/rx, ey=(gy-cy)/ry;
@@ -861,8 +887,13 @@ function startAct1(){
     {gx:31, gy:13, h:4, kind:2}  // another instar 2 on leaf 2
   ];
   eaten1 = new Set();
-  mite = null; pendingMite = false;
-  visited1 = {leaf2:false, bud:false};
+  mite = null;
+  // exactly two clover mites, visible on the plant, hunting slowly —
+  // watch the red specks and keep your distance, or shake fast
+  mites1 = [
+    {gx:19, gy:12, alive:true, step:0},
+    {gx:20, gy:26, alive:true, step:8}
+  ];
   budNoteShown = false;
   shakeWiggle = 0;
   act1Frame = 0;
@@ -886,23 +917,14 @@ function tryMove1(dx,dy){
   p1.gx = nx; p1.gy = ny;
 
   const r = region1.get(nx+','+ny);
-  if(r==='leaf2' && !visited1.leaf2){
-    visited1.leaf2 = true;
-    startMite();
-  }
-  if(r==='bud'){
-    if(!budNoteShown){
-      budNoteShown = true;
-      showToast('Milkweed buds, just about to open. Your favorite — double munch!', 3000);
-    }
-    if(!visited1.bud){
-      visited1.bud = true;
-      if(mite) pendingMite = true; else startMite();
-    }
+  if(r==='bud' && !budNoteShown){
+    budNoteShown = true;
+    showToast('Milkweed buds, just about to open. Your favorite — double munch!', 3000);
   }
 }
 
-function startMite(){
+function startMite(m){
+  m.alive = false; // off the plant — it's on YOU now
   mite = {presses:0, deadline: act1Frame + 240};
   showToast('A clover mite crawls onto you! SHAKE — press S fast, 3 times!', 3200);
   hint.textContent = 'SHAKE! press S (or the SHAKE button) ×3 — quickly!';
@@ -924,11 +946,33 @@ function tryShake(){
 function endMite(){
   mite = null;
   hint.textContent = 'crawl the stem between leaves · SPACE: eat · S: shake';
-  if(pendingMite){ pendingMite=false; setTimeout(()=>{ if(state==='act1' && !mite) startMite(); }, 1200); }
 }
 
 function updateAct1(){
   if(shakeWiggle>0) shakeWiggle--;
+  // the mites hunt: mostly homing toward you, sometimes wandering
+  if(!mite) mites1.forEach(m=>{
+    if(!m.alive) return;
+    if(++m.step < 16) return;
+    m.step = 0;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    let pick = null;
+    if((act1Frame + m.gx) % 48 < 34){
+      let bd = 1e9;
+      dirs.forEach(d=>{
+        if(!region1.has((m.gx+d[0])+','+(m.gy+d[1]))) return;
+        const dist = Math.abs(m.gx+d[0]-p1.gx) + Math.abs(m.gy+d[1]-(p1.gy+1));
+        if(dist < bd){ bd = dist; pick = d; }
+      });
+    } else {
+      const opts = dirs.filter(d=>region1.has((m.gx+d[0])+','+(m.gy+d[1])));
+      if(opts.length) pick = opts[(m.gx*7 + m.gy*13 + act1Frame) % opts.length];
+    }
+    if(pick){ m.gx += pick[0]; m.gy += pick[1]; }
+    if(Math.abs(m.gx-p1.gx)<=1 && m.gy>=p1.gy-1 && m.gy<=p1.gy+P1_H){
+      startMite(m);
+    }
+  });
   if(mite && act1Frame > mite.deadline){
     munchFilled = Math.max(0, munchFilled-2);
     renderHUD();
@@ -948,12 +992,17 @@ function tryEat1(){
     return;
   }
   let bites=0;
-  for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=0;dy++){
-    const gx=hx+dx, gy=hy+dy, k=gx+','+gy;
-    const rr = region1.get(k);
-    if(!rr || rr==='stem' || eaten1.has(k)) continue;
-    if(others1.some(o=>gx===o.gx && gy>=o.gy && gy<o.gy+o.h)) continue;
-    eaten1.add(k); bites++;
+  if(r==='bud'){
+    // buds are small and dense: one dainty bite and the bud is gone
+    if(!eaten1.has(key)){ eaten1.add(key); bites=1; }
+  } else {
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=0;dy++){
+      const gx=hx+dx, gy=hy+dy, k=gx+','+gy;
+      const rr = region1.get(k);
+      if(!rr || rr==='stem' || rr==='bud' || eaten1.has(k)) continue;
+      if(others1.some(o=>gx===o.gx && gy>=o.gy && gy<o.gy+o.h)) continue;
+      eaten1.add(k); bites++;
+    }
   }
   if(!bites){ showToast('Munched bare here. Crawl to a fresh spot.', 1600); return; }
   const gain = r==='bud' ? 2 : 1;
@@ -1008,12 +1057,13 @@ function drawAct1(){
     ctx.stroke();
   });
 
-  // bud cluster: pale green orbs with pink tips
+  // bud cluster: bright, glossy orbs with pink tips — almost open
   region1.forEach((r,k)=>{
     if(r!=='bud' || eaten1.has(k)) return;
     const [gx,gy]=k.split(',').map(Number);
-    px(gx*CELL,gy*CELL,CELL,CELL,'#b4cc96');
-    if(gy<=3) px(gx*CELL+1,gy*CELL,2,2,'#d9a6c0');
+    px(gx*CELL,gy*CELL,CELL,CELL,'#d2ec9e');
+    if(gy<=3) px(gx*CELL+1,gy*CELL,2,2,'#f2b0d4');
+    if((gx+gy)%3===0) px(gx*CELL+2,gy*CELL+2,1,1,'#fff7d6');
   });
 
   // munched-away cells show sky through the leaf
@@ -1025,15 +1075,14 @@ function drawAct1(){
     px(gx*CELL,gy*CELL,CELL,CELL, skyColor1(gy));
   });
 
-  // ambient mites creep along the stem until their event is spent
-  if(!visited1.leaf2){
-    const my = 2+((act1Frame/7)%26);
-    px(19*CELL+1, my*CELL, 2,2, '#c04030');
-  }
-  if(!visited1.bud){
-    const my = 2+((act1Frame/9+13)%26);
-    px(20*CELL+1, my*CELL, 2,2, '#c04030');
-  }
+  // the two mites, hunting — tiny red specks with darting legs
+  mites1.forEach(m=>{
+    if(!m.alive) return;
+    const jig = Math.sin((act1Frame + m.gx*9)/5);
+    px(m.gx*CELL+1, m.gy*CELL+1+jig, 2,2, '#c04030');
+    px(m.gx*CELL,   m.gy*CELL+2, 1,1, '#802018');
+    px(m.gx*CELL+3, m.gy*CELL+2, 1,1, '#802018');
+  });
 
   // neighbors: pale instar 1s and a banded instar 2
   others1.forEach(o=>{
