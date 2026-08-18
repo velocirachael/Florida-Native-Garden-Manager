@@ -137,7 +137,7 @@
     font-size:12px;
     cursor:pointer;
   }
-  #eatBtn, #silkBtn{
+  #eatBtn, #silkBtn, #webBtn{
     position:absolute;
     bottom:6px;
     width:52px;height:36px;
@@ -150,6 +150,7 @@
   }
   #eatBtn{left:6px;}
   #silkBtn{left:64px;background:rgba(122,155,92,0.85);}
+  #webBtn{left:122px;background:rgba(244,233,216,0.85);display:none;}
   #toast{
     position:absolute;
     top:34px;left:50%;transform:translateX(-50%);
@@ -184,6 +185,7 @@
   </div>
   <button id="eatBtn">EAT<br>(space)</button>
   <button id="silkBtn">SPIN SILK<br>(S)</button>
+  <button id="webBtn">WEB<br>(B)</button>
 </div>
 
 <script>
@@ -206,12 +208,15 @@ const hint = document.getElementById('hint');
 const toast = document.getElementById('toast');
 const eatBtn = document.getElementById('eatBtn');
 const silkBtn = document.getElementById('silkBtn');
+const webBtn = document.getElementById('webBtn');
 const controlsEl = document.getElementById('controls');
 
 function setGameplayControlsVisible(visible){
   const v = visible ? 'block' : 'none';
   eatBtn.style.display = v;
   silkBtn.style.display = v;
+  // the WEB bridge is an instar 2+ skill — acts 1 and 2 only
+  webBtn.style.display = (visible && (state==='act1'||state==='act2')) ? 'block' : 'none';
   controlsEl.style.display = visible ? 'grid' : 'none';
 }
 setGameplayControlsVisible(false); // hidden until Act 0 actually starts
@@ -848,7 +853,7 @@ function drawInstar2Wake(t){
    ========================================================= */
 const P1_H = 4; // instar 2 body: 1 cell wide x 4 tall
 let p1, others1, eaten1, region1, mite, mites1, mite2Spawned;
-let act1Frame, budNoteShown, shakeWiggle;
+let act1Frame, budNoteShown, shakeWiggle, silkLines;
 let hang2, spider, giant, giantDone, shadowNoteShown, lastMunch2; // act 2: silk-drop, spider, giant instar 5
 
 function inEllipse(gx,gy,cx,cy,rx,ry){
@@ -917,7 +922,7 @@ function startAct1(){
   panelText.style.display='none';
   continueBtn.classList.remove('show');
   TOTAL_MUNCH = 10;      // instar 2: double the containers
-  munchFilled = 1;       // woke up hungry
+  munchFilled = 3;       // woke up hungry — but one mite can't wipe you out
   hud.style.display='flex';
   renderHUD();
   setGameplayControlsVisible(true);
@@ -939,10 +944,11 @@ function startAct1(){
   ];
   mite2Spawned = false;
   budNoteShown = false;
+  silkLines = [];
   shakeWiggle = 0;
   act1Frame = 0;
   showToast('A whole plant to explore. The stem connects every leaf.', 3000);
-  hint.textContent = 'crawl the stem between leaves · SPACE: eat · S: shake';
+  hint.textContent = 'crawl the stem between leaves · SPACE: eat · S: shake · B: web across gaps';
 }
 
 // a body is a run of cells from the head: horizontal or vertical
@@ -963,14 +969,16 @@ function tryMove1(dx,dy){
   if(state==='act2' && hang2){ showToast('Hanging on silk — climb back up first (S).', 1500); return; }
   // the body turns to follow the crawl: sideways = horizontal, up/down = vertical
   const ph = p1.h||P1_H;
-  const dir = dx!==0 ? 'h' : (dy!==0 ? 'v' : p1.dir);
-  const face = dx>0 ? 'right' : dx<0 ? 'left' : dy>0 ? 'down' : dy<0 ? 'up' : p1.face;
-  const nx = Math.min(dir==='h' ? COLS-ph : COLS-1, Math.max(0, p1.gx+dx));
-  const ny = Math.min(dir==='v' ? ROWS-ph : ROWS-1, Math.max(0, p1.gy+dy));
-  // the head is the leading end of the crawl, and it must stay on the plant
-  const hx = dir==='h' && face==='right' ? nx+ph-1 : nx;
-  const hy = dir==='v' && face==='down'  ? ny+ph-1 : ny;
-  if(!region1.has(hx+','+hy)) return;
+  const dir = dx!==0 ? 'h' : 'v';
+  const face = dx>0 ? 'right' : dx<0 ? 'left' : dy>0 ? 'down' : 'up';
+  // the HEAD truly leads: it steps forward from wherever it is now, and the
+  // body re-forms trailing behind it — so turns pivot at the head, not the tail
+  const cur = playerCells()[0];
+  const hx = Math.min(COLS-1, Math.max(0, cur[0]+dx));
+  const hy = Math.min(ROWS-1, Math.max(0, cur[1]+dy));
+  if(!region1.has(hx+','+hy)) return; // the head must stay on the plant
+  const nx = dir==='h' && face==='right' ? hx-ph+1 : hx;
+  const ny = dir==='v' && face==='down'  ? hy-ph+1 : hy;
   const trial = cellsOf1({gx:nx, gy:ny, h:ph, dir});
   const blocked = others1.some(o=> cellsOf1(o).some(c=> trial.some(t=>t[0]===c[0]&&t[1]===c[1])));
   if(blocked){ showToast('Another caterpillar is in the way.', 1400); return; }
@@ -990,6 +998,38 @@ function tryMove1(dx,dy){
     if(r==='leaf2'){ m.gx=35; m.gy=16; } else { m.gx=3; m.gy=8; }
     showToast('Something small and red stirs on this leaf...', 2200);
   }
+}
+
+// WEB (B): spin a silk line across a gap in the direction you're facing —
+// the skill learned as a hatchling, kept for life
+function tryWeb(){
+  if(state!=='act1' && state!=='act2') return;
+  if(state==='act2' && hang2){ showToast('Hanging on silk — climb back up first (S).', 1500); return; }
+  const fd = {up:[0,-1], down:[0,1], left:[-1,0], right:[1,0]}[p1.face];
+  const head = playerCells()[0];
+  if(region1.has((head[0]+fd[0])+','+(head[1]+fd[1]))){
+    showToast('No gap ahead — just crawl.', 1400);
+    return;
+  }
+  let target = null;
+  for(let i=2; i<=8; i++){
+    const tx = head[0]+fd[0]*i, ty = head[1]+fd[1]*i;
+    if(tx<0||ty<0||tx>=COLS||ty>=ROWS) break;
+    if(region1.has(tx+','+ty)){ target=[tx,ty]; break; }
+  }
+  if(!target){ showToast('Nothing to anchor a silk line to that way.', 1800); return; }
+  const ph = p1.h||P1_H;
+  const dir = fd[0]!==0 ? 'h' : 'v';
+  const nx = dir==='h' && p1.face==='right' ? target[0]-ph+1 : target[0];
+  const ny = dir==='v' && p1.face==='down'  ? target[1]-ph+1 : target[1];
+  const trial = cellsOf1({gx:nx, gy:ny, h:ph, dir});
+  if(others1.some(o=> cellsOf1(o).some(c=> trial.some(t=>t[0]===c[0]&&t[1]===c[1])))){
+    showToast('Another caterpillar is on the far side.', 1500);
+    return;
+  }
+  silkLines.push({x1:head[0], y1:head[1], x2:target[0], y2:target[1]});
+  p1.gx = nx; p1.gy = ny; p1.dir = dir;
+  showToast('You spin a silk line and cross the gap!', 1800);
 }
 
 function startMite(m){
@@ -1014,7 +1054,7 @@ function tryShake(){
 
 function endMite(){
   mite = null;
-  hint.textContent = 'crawl the stem between leaves · SPACE: eat · S: shake';
+  hint.textContent = 'crawl the stem between leaves · SPACE: eat · S: shake · B: web across gaps';
 }
 
 function updateAct1(){
@@ -1158,6 +1198,16 @@ function drawAct1(){
     px(gx*CELL,gy*CELL,CELL,CELL, skyColor1(gy));
   });
 
+  // silk lines spun across gaps stay behind, shimmering
+  silkLines.forEach(l=>{
+    ctx.strokeStyle='rgba(244,233,216,0.7)';
+    ctx.lineWidth=0.7;
+    ctx.beginPath();
+    ctx.moveTo(l.x1*CELL+CELL/2, l.y1*CELL+CELL/2);
+    ctx.lineTo(l.x2*CELL+CELL/2, l.y2*CELL+CELL/2);
+    ctx.stroke();
+  });
+
   // the two mites, hunting — tiny red specks with darting legs
   mites1.forEach(m=>{
     if(!m.alive) return;
@@ -1221,6 +1271,7 @@ function startAct2(){
   mite = null; mites1 = []; mite2Spawned = true; // the mites had their day
   budNoteShown = true;
   shakeWiggle = 0;
+  silkLines = [];
   hang2 = false;
   shadowNoteShown = false;
   spider = {gx:40, gy:14, step:0, cool:0, chasing:false};
@@ -1508,6 +1559,7 @@ window.addEventListener('keydown', (e)=>{
     case 'ArrowRight': case 'd': case 'D': doMove(1,0); break;
     case ' ': e.preventDefault(); doEat(); break;
     case 's': case 'S': case 'x': case 'X': doAction(); break;
+    case 'b': case 'B': tryWeb(); break;
   }
 });
 
@@ -1517,6 +1569,7 @@ document.getElementById('btnLeft').addEventListener('click', ()=>doMove(-1,0));
 document.getElementById('btnRight').addEventListener('click', ()=>doMove(1,0));
 eatBtn.addEventListener('click', doEat);
 silkBtn.addEventListener('click', doAction);
+webBtn.addEventListener('click', tryWeb);
 
 /* ---------- boot ---------- */
 skipBtn.style.display='block';
