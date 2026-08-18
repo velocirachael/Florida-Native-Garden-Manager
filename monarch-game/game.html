@@ -923,7 +923,7 @@ function startAct1(){
   setGameplayControlsVisible(true);
   silkBtn.innerHTML = 'SHAKE<br>(S)';
 
-  p1 = {gx:10, gy:19, dir:'v'}; // head cell; body follows; turns as you crawl
+  p1 = {gx:10, gy:19, dir:'v', face:'up'}; // the head leads the crawl
   others1 = [
     {gx:4,  gy:21, h:3, kind:1, dir:'h'}, // instar 1 lying across leaf 1
     {gx:8,  gy:7,  h:3, kind:1, dir:'v'}, // instar 1 upright on leaf 3
@@ -951,7 +951,12 @@ function cellsOf1(e){
   for(let i=0;i<n;i++) cells.push(e.dir==='h' ? [e.gx+i,e.gy] : [e.gx,e.gy+i]);
   return cells;
 }
-function playerCells(){ return cellsOf1({gx:p1.gx, gy:p1.gy, h:p1.h||P1_H, dir:p1.dir}); }
+// cells ordered head-first: the head is whichever end leads the crawl
+function playerCells(){
+  const cells = cellsOf1({gx:p1.gx, gy:p1.gy, h:p1.h||P1_H, dir:p1.dir});
+  if(p1.face==='down' || p1.face==='right') cells.reverse();
+  return cells;
+}
 
 function tryMove1(dx,dy){
   if(state!=='act1' && state!=='act2') return;
@@ -959,15 +964,19 @@ function tryMove1(dx,dy){
   // the body turns to follow the crawl: sideways = horizontal, up/down = vertical
   const ph = p1.h||P1_H;
   const dir = dx!==0 ? 'h' : (dy!==0 ? 'v' : p1.dir);
+  const face = dx>0 ? 'right' : dx<0 ? 'left' : dy>0 ? 'down' : dy<0 ? 'up' : p1.face;
   const nx = Math.min(dir==='h' ? COLS-ph : COLS-1, Math.max(0, p1.gx+dx));
   const ny = Math.min(dir==='v' ? ROWS-ph : ROWS-1, Math.max(0, p1.gy+dy));
-  if(!region1.has(nx+','+ny)) return; // head must stay on the plant
+  // the head is the leading end of the crawl, and it must stay on the plant
+  const hx = dir==='h' && face==='right' ? nx+ph-1 : nx;
+  const hy = dir==='v' && face==='down'  ? ny+ph-1 : ny;
+  if(!region1.has(hx+','+hy)) return;
   const trial = cellsOf1({gx:nx, gy:ny, h:ph, dir});
   const blocked = others1.some(o=> cellsOf1(o).some(c=> trial.some(t=>t[0]===c[0]&&t[1]===c[1])));
   if(blocked){ showToast('Another caterpillar is in the way.', 1400); return; }
-  p1.gx = nx; p1.gy = ny; p1.dir = dir;
+  p1.gx = nx; p1.gy = ny; p1.dir = dir; p1.face = face;
 
-  const r = region1.get(nx+','+ny);
+  const r = region1.get(hx+','+hy);
   if(r==='bud' && !budNoteShown){
     budNoteShown = true;
     showToast('Milkweed buds, just about to open. Your favorite — double munch!', 3000);
@@ -1045,7 +1054,8 @@ function updateAct1(){
 function tryEat1(){
   if(state!=='act1' && state!=='act2') return;
   if(state==='act2' && hang2){ showToast('Hanging on silk — climb back up first (S).', 1500); return; }
-  const hx=p1.gx, hy=p1.gy, key=hx+','+hy;
+  const head = playerCells()[0];
+  const hx=head[0], hy=head[1], key=hx+','+hy;
   const r = region1.get(key);
   if(!r) return;
   if(r==='stem'){ showToast('Nothing to munch on the bare stem.', 1600); return; }
@@ -1199,7 +1209,7 @@ function startAct2(){
   setGameplayControlsVisible(true);
   silkBtn.innerHTML = 'DROP<br>(S)';
 
-  p1 = {gx:20, gy:44, dir:'v', h:5}; // instar 3: longer body, real antennae
+  p1 = {gx:20, gy:44, dir:'v', h:5, face:'up'}; // instar 3: longer body, real antennae
   others1 = [ // instars of all sizes share the bush
     {gx:14, gy:47, h:2, kind:1, dir:'h'},
     {gx:58, gy:40, h:3, kind:1, dir:'v'},
@@ -1235,7 +1245,8 @@ function tryDrop(){
 }
 
 function playerHidden(){
-  const key = p1.gx+','+p1.gy;
+  const head = playerCells()[0];
+  const key = head[0]+','+head[1];
   return hang2 || (shadowCells.has(key) && !eaten1.has(key));
 }
 
@@ -1269,7 +1280,8 @@ function updateAct2(){
   if(s.cool>0) s.cool--;
   if(++s.step >= (s.chasing?10:16)){
     s.step = 0;
-    const dmap = bfsFrom(p1.gx, p1.gy);
+    const ph1 = playerCells()[0];
+    const dmap = bfsFrom(ph1[0], ph1[1]);
     const pathDist = dmap.get(s.gx+','+s.gy) ?? 999;
     const heardYou = act1Frame - lastMunch2 < 240; // ~4s of munching vibrations
     s.chasing = !hidden && s.cool<=0 && pathDist<14;
@@ -1403,12 +1415,21 @@ function drawWorm1(cells, bands, isPlayer, ant){
     px(sx, sy, CELL, CELL, bands[i%bands.length]);
     px(sx, sy, 1, CELL, 'rgba(255,255,255,0.25)');
   });
-  const h = cells[0], horizontal = cells.length>1 && cells[1][1]===h[1];
+  // antennae point outward from the head, whichever end is leading
+  const h = cells[0];
+  const ox = cells.length>1 ? h[0]-cells[1][0] : 0;
+  const oy = cells.length>1 ? h[1]-cells[1][1] : -1;
   const hx = h[0]*CELL+wob, hy = h[1]*CELL;
-  if(horizontal){
+  if(ox===1){        // heading right
+    px(hx+CELL, hy, ant,1, '#2b2320');
+    px(hx+CELL, hy+CELL-1, ant,1, '#2b2320');
+  } else if(ox===-1){ // heading left
     px(hx-ant, hy, ant,1, '#2b2320');
     px(hx-ant, hy+CELL-1, ant,1, '#2b2320');
-  } else {
+  } else if(oy===1){  // heading down
+    px(hx, hy+CELL, 1,ant, '#2b2320');
+    px(hx+CELL-1, hy+CELL, 1,ant, '#2b2320');
+  } else {            // heading up
     px(hx, hy-ant, 1,ant, '#2b2320');
     px(hx+CELL-1, hy-ant, 1,ant, '#2b2320');
   }
