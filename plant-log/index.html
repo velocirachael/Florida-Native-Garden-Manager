@@ -411,6 +411,28 @@
   downloadsReady.then(function (dl) {
     if (dl) document.getElementById("export-btn").hidden = false;
   });
+  if (typeof window.claude === "undefined") {
+    // normal browser (garden server or local file): plain downloads work
+    document.getElementById("export-btn").hidden = false;
+  }
+
+  // When this page is served from the garden cyberdeck (the Pico at
+  // 192.168.4.1), /api/plants stores the log in plants.json on its flash.
+  var serverMode = false;
+  fetch("/api/plants", { cache: "no-store" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .catch(function () { return null; })
+    .then(function (srv) {
+      if (!srv || !(srv.plants instanceof Array)) return;
+      serverMode = true;
+      if (srv.plants.length === 0 && state.plants.length > 0) {
+        persist(); // first visit from this device: seed the server with the local log
+      } else {
+        state = srv;
+        render();
+        setSync("Connected to the garden server");
+      }
+    });
 
   function setSync(msg) { document.getElementById("sync").textContent = msg; }
 
@@ -431,6 +453,19 @@
   }
 
   function doPublish() {
+    if (serverMode) {
+      setSync("Saving…");
+      fetch("/api/plants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(state)
+      }).then(function (r) {
+        setSync(r.ok ? "Saved to the garden server" : "Saved on this device only");
+      }).catch(function () {
+        setSync("Saved on this device only");
+      });
+      return;
+    }
     artifactReady.then(function (art) {
       if (!art) { setSync("Saved on this device"); return; }
       setSync("Saving…");
@@ -626,20 +661,32 @@
     }
   });
 
+  function buildCsv() {
+    var rows = [["Name", "Scientific name", "Location", "Date planted", "Status", "Notes"]];
+    state.plants.forEach(function (p) {
+      rows.push([
+        p.name, p.sci || "", p.location || "", p.planted || "", statusLabel(p.status),
+        (p.notes || []).map(function (n) { return n.date + ": " + n.text; }).join(" | ")
+      ]);
+    });
+    return rows.map(function (r) {
+      return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(",");
+    }).join("\r\n");
+  }
+
   document.getElementById("export-btn").addEventListener("click", function () {
+    var csv = buildCsv();
     downloadsReady.then(function (dl) {
-      if (!dl) return;
-      var rows = [["Name", "Scientific name", "Location", "Date planted", "Status", "Notes"]];
-      state.plants.forEach(function (p) {
-        rows.push([
-          p.name, p.sci || "", p.location || "", p.planted || "", statusLabel(p.status),
-          (p.notes || []).map(function (n) { return n.date + ": " + n.text; }).join(" | ")
-        ]);
-      });
-      var csv = rows.map(function (r) {
-        return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(",");
-      }).join("\r\n");
-      dl.save({ filename: "palmetto-ledger.csv", data: csv }).catch(function () {});
+      if (dl) {
+        dl.save({ filename: "palmetto-ledger.csv", data: csv }).catch(function () {});
+        return;
+      }
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+      a.download = "palmetto-ledger.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     });
   });
 

@@ -1,20 +1,36 @@
-# Monarch game web server for the Raspberry Pi Pico 2 W (MicroPython).
+# Garden web server for the Raspberry Pi Pico 2 W (MicroPython).
 #
-# Serves the browser game from monarch-game/ to anyone who joins the
-# Pico's WiFi network. Copy these files onto the Pico's flash:
+# Serves the browser game from monarch-game/ and the plant log from
+# plant-log/ to anyone who joins the Pico's WiFi network. Copy these
+# files onto the Pico's flash:
 #
 #     main.py       (this file)
 #     index.html    (from monarch-game/)
 #     game.html     (from monarch-game/)
+#     plants.html   (from plant-log/index.html)
 #
 # Then visit http://<pico-ip>/ from any device on the Pico's network.
+# The plant log lives at http://<pico-ip>/plants.html and stores its
+# entries in plants.json on the Pico's flash via /api/plants.
 #
 # This script assumes your Pico is already set up as a WiFi hub with
 # its own IP. If it isn't, flip START_ACCESS_POINT to True below and
 # the Pico will broadcast its own network on boot.
 
+import json
 import os
 import socket
+
+# Two ways to get the Pico on a network — pick ONE:
+#
+# 1. Join your home WiFi (recommended): fill in HOME_SSID/HOME_PASSWORD
+#    below. Every device already on your router can then reach the Pico
+#    at the IP your router assigns it (printed on boot, e.g. 192.168.1.x).
+#
+# 2. Broadcast its own network: set START_ACCESS_POINT = True. Devices
+#    must join the Pico's WiFi directly; the Pico is then 192.168.4.1.
+HOME_SSID = ""              # your home WiFi name
+HOME_PASSWORD = ""          # your home WiFi password
 
 START_ACCESS_POINT = False
 AP_SSID = "MonarchGarden"
@@ -27,9 +43,14 @@ CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css",
     ".js": "application/javascript",
+    ".json": "application/json",
     ".png": "image/png",
     ".ico": "image/x-icon",
 }
+
+PLANT_FILE = "plants.json"
+MAX_PLANT_BYTES = 32 * 1024   # cap the log so a bad POST can't eat the RAM
+EMPTY_PLANTS = b'{"plants":[]}'
 
 
 def start_access_point():
@@ -40,6 +61,23 @@ def start_access_point():
     while not ap.active():
         pass
     print("Access point up:", AP_SSID, "IP:", ap.ifconfig()[0])
+
+
+def join_home_wifi():
+    import network
+    import time
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    if not wlan.isconnected():
+        wlan.connect(HOME_SSID, HOME_PASSWORD)
+        for _ in range(100):            # wait up to ~20 seconds
+            if wlan.isconnected():
+                break
+            time.sleep_ms(200)
+    if wlan.isconnected():
+        print("Joined", HOME_SSID, "— reach the garden at http://" + wlan.ifconfig()[0] + "/")
+    else:
+        print("Could not join", HOME_SSID, "— check the name and password")
 
 
 def file_size(path):
@@ -80,16 +118,85 @@ def send_file(conn, path):
 NOT_FOUND = (b"<h1>404</h1><p>No leaf here. Try <a href='/'>the garden</a>.</p>")
 
 
+def send_json(conn, status, payload):
+    conn.send(
+        "HTTP/1.0 {}\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: {}\r\n"
+        "Cache-Control: no-store\r\n"
+        "Connection: close\r\n\r\n".format(status, len(payload)).encode()
+    )
+    conn.send(payload)
+
+
+def handle_plants(conn, method, head, body):
+    if method == "GET":
+        if file_size(PLANT_FILE) is None:
+            send_json(conn, "200 OK", EMPTY_PLANTS)
+            return
+        with open(PLANT_FILE, "rb") as f:
+            send_json(conn, "200 OK", f.read())
+        return
+    if method != "POST":
+        send_json(conn, "405 Method Not Allowed", b'{"error":"GET or POST"}')
+        return
+    length = 0
+    for line in head.split(b"\r\n")[1:]:
+        if line.lower().startswith(b"content-length:"):
+            try:
+                length = int(line.split(b":", 1)[1])
+            except ValueError:
+                length = 0
+    if length <= 0 or length > MAX_PLANT_BYTES:
+        send_json(conn, "413 Payload Too Large", b'{"error":"log too large"}')
+        return
+    while len(body) < length:
+        chunk = conn.recv(512)
+        if not chunk:
+            break
+        body += chunk
+    try:
+        data = json.loads(body)
+        if not isinstance(data.get("plants"), list):
+            raise ValueError("no plants list")
+    except (ValueError, AttributeError):
+        send_json(conn, "400 Bad Request", b'{"error":"bad plant data"}')
+        return
+    # write to a temp file and swap, so a power blip can't half-write the log
+    with open("plants.tmp", "wb") as f:
+        f.write(body)
+    os.rename("plants.tmp", PLANT_FILE)
+    send_json(conn, "200 OK", b'{"ok":true}')
+
+
+def read_request(conn):
+    # read up to the end of the headers (give up past 2 KB of them)
+    req = b""
+    while b"\r\n\r\n" not in req:
+        chunk = conn.recv(512)
+        if not chunk:
+            break
+        req += chunk
+        if len(req) > 2048:
+            break
+    return req
+
+
 def handle(conn):
-    # read just the request line; we don't need the headers
-    req = conn.recv(512)
+    req = read_request(conn)
     if not req:
         return
+    head, _, body = req.partition(b"\r\n\r\n")
     try:
-        path = req.split(b" ")[1].decode()
+        parts = head.split(b"\r\n")[0].split(b" ")
+        method = parts[0].decode()
+        path = parts[1].decode()
     except (IndexError, UnicodeError):
         return
     path = path.split("?")[0]
+    if path == "/api/plants":
+        handle_plants(conn, method, head, body)
+        return
     if path == "/":
         path = "/index.html"
     name = path.lstrip("/")
@@ -123,4 +230,6 @@ def serve():
 
 if START_ACCESS_POINT:
     start_access_point()
+elif HOME_SSID:
+    join_home_wifi()
 serve()
