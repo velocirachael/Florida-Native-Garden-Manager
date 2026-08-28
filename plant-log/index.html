@@ -1,0 +1,647 @@
+<title>Palmetto Ledger</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Besley:ital,wght@0,600;0,800;1,500&family=Karla:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --ground: #F3F2E9;
+    --card: #FCFBF6;
+    --ink: #22301C;
+    --muted: #67735B;
+    --line: #D8D7C5;
+    --accent: #2E6B3A;
+    --accent-ink: #FCFBF6;
+    --gold: #A87F24;
+    --warn: #B06A1F;
+    --lost: #85857A;
+    --chip-ok-bg: #E2ECDD;
+    --chip-gold-bg: #F0E7CE;
+    --chip-warn-bg: #F2E3CE;
+    --chip-lost-bg: #E6E5DC;
+    --focus: #2E6B3A;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #161C12;
+      --card: #202919;
+      --ink: #E9EBDA;
+      --muted: #9AA48B;
+      --line: #37422D;
+      --accent: #82B76C;
+      --accent-ink: #14200F;
+      --gold: #D3A94A;
+      --warn: #D89A55;
+      --lost: #8E967F;
+      --chip-ok-bg: #2A3B22;
+      --chip-gold-bg: #3B331B;
+      --chip-warn-bg: #3D2F1B;
+      --chip-lost-bg: #2B3026;
+      --focus: #82B76C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #161C12;
+    --card: #202919;
+    --ink: #E9EBDA;
+    --muted: #9AA48B;
+    --line: #37422D;
+    --accent: #82B76C;
+    --accent-ink: #14200F;
+    --gold: #D3A94A;
+    --warn: #D89A55;
+    --lost: #8E967F;
+    --chip-ok-bg: #2A3B22;
+    --chip-gold-bg: #3B331B;
+    --chip-warn-bg: #3D2F1B;
+    --chip-lost-bg: #2B3026;
+    --focus: #82B76C;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: Karla, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.5;
+    margin: 0;
+    padding: 0 16px 96px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+
+  header { padding: 28px 0 4px; }
+  h1 {
+    font-family: Besley, Georgia, serif;
+    font-weight: 800;
+    font-size: 1.9rem;
+    margin: 0;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  h1 .leaf { color: var(--accent); }
+  .tally {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin: 4px 0 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .sync {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin: 2px 0 0;
+    min-height: 1.2em;
+  }
+
+  .toolbar { display: flex; flex-direction: column; gap: 10px; margin: 18px 0 14px; }
+  .toolbar-row { display: flex; gap: 8px; }
+  .search {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font: inherit;
+    color: var(--ink);
+  }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filter-chip {
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }
+  .filter-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  .add-btn {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: none;
+    border-radius: 8px;
+    padding: 12px 18px;
+    font: inherit;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    width: 100%;
+  }
+  .export-btn {
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .export-btn[hidden] { display: none; }
+
+  form.plant-form {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    margin: 0 0 16px;
+    display: grid;
+    gap: 12px;
+  }
+  form.plant-form[hidden] { display: none; }
+  .field { display: grid; gap: 4px; }
+  .field label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+  }
+  .field input, .field select, .field textarea {
+    background: var(--ground);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font: inherit;
+    color: var(--ink);
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .field textarea { resize: vertical; min-height: 56px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 420px) { .form-row { grid-template-columns: 1fr; } }
+  .form-actions { display: flex; gap: 8px; align-items: center; }
+  .form-actions .save {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .form-actions .cancel {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font: inherit;
+    cursor: pointer;
+    padding: 10px 8px;
+  }
+  .form-actions .remove {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--warn);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 10px 4px;
+  }
+
+  ul.plants { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .plant-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .card-top { display: flex; align-items: baseline; gap: 8px; }
+  .plant-name {
+    font-family: Besley, Georgia, serif;
+    font-weight: 600;
+    font-size: 1.15rem;
+    margin: 0;
+  }
+  .sci {
+    font-family: Besley, Georgia, serif;
+    font-style: italic;
+    font-weight: 500;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .edit-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 2px 4px;
+    flex-shrink: 0;
+  }
+  .card-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 6px 0 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .status-chip {
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .status-thriving  { background: var(--chip-ok-bg);   color: var(--accent); }
+  .status-settling  { background: var(--chip-gold-bg); color: var(--gold); }
+  .status-struggling{ background: var(--chip-warn-bg); color: var(--warn); }
+  .status-lost      { background: var(--chip-lost-bg); color: var(--lost); }
+
+  ul.notes { list-style: none; margin: 10px 0 0; padding: 10px 0 0; border-top: 1px dashed var(--line); display: grid; gap: 4px; }
+  ul.notes li { font-size: 0.9rem; }
+  ul.notes .note-date { color: var(--muted); font-size: 0.8rem; margin-right: 6px; font-variant-numeric: tabular-nums; }
+  .note-row { display: flex; gap: 6px; margin-top: 8px; }
+  .note-row input {
+    flex: 1;
+    background: var(--ground);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--ink);
+  }
+  .note-row button {
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--accent);
+    border-radius: 8px;
+    padding: 7px 12px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .add-note-toggle {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 6px 0 0;
+  }
+
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 40px 12px;
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+  }
+  .empty p { margin: 4px 0; }
+
+  :is(button, input, select, textarea):focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+</style>
+
+<script type="application/json" id="plant-data">{"plants":[]}</script>
+
+<div class="wrap">
+  <header>
+    <h1><span class="leaf">&#10047;</span> Palmetto Ledger</h1>
+    <p class="tally" id="tally"></p>
+    <p class="sync" id="sync"></p>
+  </header>
+
+  <div class="toolbar">
+    <button class="add-btn" id="add-btn" type="button">+ Log a plant</button>
+    <form class="plant-form" id="plant-form" hidden>
+      <div class="field">
+        <label for="f-name">Plant name</label>
+        <input id="f-name" required placeholder="Coontie, firebush, muhly grass&hellip;" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="f-sci">Scientific name (optional)</label>
+        <input id="f-sci" placeholder="Zamia integrifolia" autocomplete="off">
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label for="f-loc">Spot in the garden</label>
+          <input id="f-loc" placeholder="Front bed, by the oak&hellip;" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-date">Date planted</label>
+          <input id="f-date" type="date">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label for="f-status">How is it doing?</label>
+          <select id="f-status">
+            <option value="thriving">Thriving</option>
+            <option value="settling" selected>Settling in</option>
+            <option value="struggling">Struggling</option>
+            <option value="lost">Lost</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-note">Note (optional)</label>
+          <input id="f-note" placeholder="From the native nursery sale" autocomplete="off">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="save" type="submit">Save plant</button>
+        <button class="cancel" type="button" id="cancel-btn">Cancel</button>
+        <button class="remove" type="button" id="remove-btn" hidden>Remove plant</button>
+      </div>
+    </form>
+    <div class="toolbar-row">
+      <input class="search" id="search" type="search" placeholder="Search plants, spots&hellip;" aria-label="Search plants">
+      <button class="export-btn" id="export-btn" type="button" hidden>Export CSV</button>
+    </div>
+    <div class="filters" id="filters" role="group" aria-label="Filter by status"></div>
+  </div>
+
+  <ul class="plants" id="plant-list"></ul>
+  <div class="empty" id="empty" hidden>
+    <p><strong>No plants logged yet.</strong></p>
+    <p>Tap &ldquo;Log a plant&rdquo; to start your garden record.</p>
+  </div>
+</div>
+
+<script>
+  var TEMPLATE = document.documentElement.outerHTML;
+
+  var STATUSES = [
+    { key: "thriving",   label: "Thriving" },
+    { key: "settling",   label: "Settling in" },
+    { key: "struggling", label: "Struggling" },
+    { key: "lost",       label: "Lost" }
+  ];
+  var STORE_KEY = "palmetto-ledger";
+
+  function loadState() {
+    var published = { plants: [] };
+    try {
+      published = JSON.parse(document.getElementById("plant-data").textContent) || published;
+    } catch (e) {}
+    if (published.plants && published.plants.length) return published;
+    try {
+      var local = JSON.parse(localStorage.getItem(STORE_KEY));
+      if (local && local.plants && local.plants.length) return local;
+    } catch (e) {}
+    return published;
+  }
+
+  var state = loadState();
+  var editingId = null;
+  var searchTerm = "";
+  var statusFilter = "all";
+
+  var artifactReady = (typeof window.claude !== "undefined" && window.claude.use)
+    ? window.claude.use("artifact").catch(function () { return null; })
+    : Promise.resolve(null);
+  var downloadsReady = (typeof window.claude !== "undefined" && window.claude.use)
+    ? window.claude.use("downloads").catch(function () { return null; })
+    : Promise.resolve(null);
+
+  downloadsReady.then(function (dl) {
+    if (dl) document.getElementById("export-btn").hidden = false;
+  });
+
+  function setSync(msg) { document.getElementById("sync").textContent = msg; }
+
+  function buildDoc() {
+    var json = JSON.stringify(state).replace(/</g, "\\u003c");
+    var html = TEMPLATE.replace(
+      /(<script type="application\/json" id="plant-data">)[\s\S]*?(<\/script>)/,
+      function (m, open, close) { return open + json + close; }
+    );
+    return "<!doctype html>\n" + html;
+  }
+
+  var persistTimer = null;
+  function persist() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(doPublish, 900);
+  }
+
+  function doPublish() {
+    artifactReady.then(function (art) {
+      if (!art) { setSync("Saved on this device"); return; }
+      setSync("Saving…");
+      art.publish(buildDoc()).then(function () {
+        setSync("Saved");
+      }).catch(function (err) {
+        if (err && err.code === "conflict") return; // page reloads to the winner
+        setSync("Saved on this device only");
+      });
+    });
+  }
+
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function fmtDate(iso) {
+    if (!iso) return "";
+    var parts = iso.split("-");
+    if (parts.length !== 3) return iso;
+    return parts[1] + "/" + parts[2] + "/" + parts[0].slice(2);
+  }
+  function esc(s) {
+    return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function statusLabel(key) {
+    for (var i = 0; i < STATUSES.length; i++) if (STATUSES[i].key === key) return STATUSES[i].label;
+    return key;
+  }
+
+  function visiblePlants() {
+    var q = searchTerm.toLowerCase();
+    return state.plants.filter(function (p) {
+      if (statusFilter !== "all" && p.status !== statusFilter) return false;
+      if (!q) return true;
+      return (p.name + " " + (p.sci || "") + " " + (p.location || "")).toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  function render() {
+    var plants = state.plants;
+    var thriving = plants.filter(function (p) { return p.status === "thriving"; }).length;
+    var tally = document.getElementById("tally");
+    tally.textContent = plants.length === 0 ? "Your garden record"
+      : plants.length + (plants.length === 1 ? " plant" : " plants") + " logged · " + thriving + " thriving";
+
+    var filters = document.getElementById("filters");
+    var fHtml = '<button class="filter-chip' + (statusFilter === "all" ? " active" : "") + '" data-filter="all" type="button">All (' + plants.length + ")</button>";
+    STATUSES.forEach(function (s) {
+      var n = plants.filter(function (p) { return p.status === s.key; }).length;
+      if (n === 0 && statusFilter !== s.key) return;
+      fHtml += '<button class="filter-chip' + (statusFilter === s.key ? " active" : "") + '" data-filter="' + s.key + '" type="button">' + s.label + " (" + n + ")</button>";
+    });
+    filters.innerHTML = fHtml;
+
+    var list = document.getElementById("plant-list");
+    var shown = visiblePlants().slice().sort(function (a, b) {
+      return (b.planted || "").localeCompare(a.planted || "") || (b.id - a.id);
+    });
+    document.getElementById("empty").hidden = plants.length !== 0;
+
+    list.innerHTML = shown.map(function (p) {
+      var notes = (p.notes || []).map(function (n) {
+        return "<li><span class='note-date'>" + esc(fmtDate(n.date)) + "</span>" + esc(n.text) + "</li>";
+      }).join("");
+      return '<li class="plant-card" data-id="' + p.id + '">'
+        + '<div class="card-top">'
+        +   '<h2 class="plant-name">' + esc(p.name) + "</h2>"
+        +   (p.sci ? '<span class="sci">' + esc(p.sci) + "</span>" : "")
+        +   '<button class="edit-btn" data-act="edit" type="button">Edit</button>'
+        + "</div>"
+        + '<div class="card-meta">'
+        +   '<span class="status-chip status-' + esc(p.status) + '">' + statusLabel(p.status) + "</span>"
+        +   (p.location ? "<span>" + esc(p.location) + "</span>" : "")
+        +   (p.planted ? "<span>planted " + fmtDate(p.planted) + "</span>" : "")
+        + "</div>"
+        + (notes ? '<ul class="notes">' + notes + "</ul>" : "")
+        + '<button class="add-note-toggle" data-act="note-toggle" type="button">+ Add note</button>'
+        + '<div class="note-row" hidden>'
+        +   '<input placeholder="First bloom today…" aria-label="New note">'
+        +   '<button data-act="note-save" type="button">Add</button>'
+        + "</div>"
+        + "</li>";
+    }).join("");
+  }
+
+  var form = document.getElementById("plant-form");
+  var addBtn = document.getElementById("add-btn");
+
+  function openForm(plant) {
+    editingId = plant ? plant.id : null;
+    document.getElementById("f-name").value = plant ? plant.name : "";
+    document.getElementById("f-sci").value = plant ? (plant.sci || "") : "";
+    document.getElementById("f-loc").value = plant ? (plant.location || "") : "";
+    document.getElementById("f-date").value = plant ? (plant.planted || "") : todayISO();
+    document.getElementById("f-status").value = plant ? plant.status : "settling";
+    document.getElementById("f-note").value = "";
+    document.getElementById("f-note").parentElement.hidden = !!plant;
+    document.getElementById("remove-btn").hidden = !plant;
+    form.hidden = false;
+    addBtn.hidden = true;
+    document.getElementById("f-name").focus();
+  }
+  function closeForm() {
+    form.hidden = true;
+    addBtn.hidden = false;
+    editingId = null;
+  }
+
+  addBtn.addEventListener("click", function () { openForm(null); });
+  document.getElementById("cancel-btn").addEventListener("click", closeForm);
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var name = document.getElementById("f-name").value.trim();
+    if (!name) return;
+    var fields = {
+      name: name,
+      sci: document.getElementById("f-sci").value.trim(),
+      location: document.getElementById("f-loc").value.trim(),
+      planted: document.getElementById("f-date").value,
+      status: document.getElementById("f-status").value
+    };
+    if (editingId !== null) {
+      state.plants.forEach(function (p) {
+        if (p.id === editingId) Object.assign(p, fields);
+      });
+    } else {
+      var plant = Object.assign({ id: Date.now(), notes: [] }, fields);
+      var firstNote = document.getElementById("f-note").value.trim();
+      if (firstNote) plant.notes.push({ date: todayISO(), text: firstNote });
+      state.plants.push(plant);
+    }
+    closeForm();
+    render();
+    persist();
+  });
+
+  document.getElementById("remove-btn").addEventListener("click", function () {
+    if (editingId === null) return;
+    var plant = state.plants.find(function (p) { return p.id === editingId; });
+    if (!plant) return;
+    if (!confirm("Remove “" + plant.name + "” from the ledger?")) return;
+    state.plants = state.plants.filter(function (p) { return p.id !== editingId; });
+    closeForm();
+    render();
+    persist();
+  });
+
+  document.getElementById("search").addEventListener("input", function (ev) {
+    searchTerm = ev.target.value.trim();
+    render();
+  });
+
+  document.getElementById("filters").addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-filter]");
+    if (!btn) return;
+    statusFilter = btn.getAttribute("data-filter");
+    render();
+  });
+
+  document.getElementById("plant-list").addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-act]");
+    if (!btn) return;
+    var card = btn.closest(".plant-card");
+    var id = Number(card.getAttribute("data-id"));
+    var plant = state.plants.find(function (p) { return p.id === id; });
+    if (!plant) return;
+    var act = btn.getAttribute("data-act");
+    if (act === "edit") {
+      openForm(plant);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else if (act === "note-toggle") {
+      var row = card.querySelector(".note-row");
+      row.hidden = !row.hidden;
+      if (!row.hidden) row.querySelector("input").focus();
+    } else if (act === "note-save") {
+      var input = card.querySelector(".note-row input");
+      var text = input.value.trim();
+      if (!text) return;
+      plant.notes = plant.notes || [];
+      plant.notes.push({ date: todayISO(), text: text });
+      render();
+      persist();
+    }
+  });
+
+  document.getElementById("plant-list").addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" && ev.target.matches(".note-row input")) {
+      ev.preventDefault();
+      var btn = ev.target.parentElement.querySelector("[data-act='note-save']");
+      btn.click();
+    }
+  });
+
+  document.getElementById("export-btn").addEventListener("click", function () {
+    downloadsReady.then(function (dl) {
+      if (!dl) return;
+      var rows = [["Name", "Scientific name", "Location", "Date planted", "Status", "Notes"]];
+      state.plants.forEach(function (p) {
+        rows.push([
+          p.name, p.sci || "", p.location || "", p.planted || "", statusLabel(p.status),
+          (p.notes || []).map(function (n) { return n.date + ": " + n.text; }).join(" | ")
+        ]);
+      });
+      var csv = rows.map(function (r) {
+        return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(",");
+      }).join("\r\n");
+      dl.save({ filename: "palmetto-ledger.csv", data: csv }).catch(function () {});
+    });
+  });
+
+  render();
+</script>
