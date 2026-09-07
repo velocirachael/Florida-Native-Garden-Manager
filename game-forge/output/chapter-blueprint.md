@@ -1,5 +1,5 @@
 # Chapter 2 Blueprint — "The Concord's Voyage"
-**The Scattered Guild · Architect output · 2026-09-07 · STATUS: awaiting review — nothing built**
+**The Scattered Guild · Architect output · 2026-09-07 · STATUS: decisions locked, ready to build**
 
 ---
 
@@ -20,7 +20,7 @@ Chapter 1 ended with Yuki (Thread-Spinner) and Hana (Dyer) allied in Floridae, C
 
 Thematic spine (per handoff): the value is in the connections between crafts, not any single technique. Corso loses because he can't copy a *relationship*.
 
-**Chapter 1 canon assumed at Ch2 start** (see Open Decision D1): Yuki allied, Hana allied, Tomoe transport secured, Corso aware of the party. A recap scene establishes this so fresh players aren't lost.
+**Chapter 1 canon: fixed start** (D1 resolved). Yuki allied, Hana allied, Tomoe transport secured, Corso aware of the party. A recap scene establishes this so fresh players aren't lost. Real stat import deferred to when actual students replace NPC slots — fixed canon is correct for a variable party size of 1–4.
 
 ---
 
@@ -181,16 +181,20 @@ Jade character beat on this arc: cracking the cipher *requires* Tadashi's hints 
 | ID | Type | Checks | Items | Notes |
 |---|---|---|---|---|
 | `return_voyage` | static | — | — | Sailing home, Tomoe brings news: Corso pushed the Merchant Council to an emergency vote banning independent artisans — scheduled the same day as **Hana's Cultural Preservation Hearing** (direct Ch1 `town_search` callback). → `hearing_hall`. |
-| `hearing_hall` | static | — | — | All five masters present. Corso confident. Choices: present the ledger (condition: **Agent's Ledger**, no roll) → `hearing_evidence`; Rachael addresses the council (persuasion 13) → `hearing_speech`; live demonstration — five masters work one pattern in concert (performance 12) → `hearing_demo`. |
+| `hearing_hall` | static | — | — | All five masters present. Corso confident. **Councilwoman Maren** presides — introduced here as the one honest vote on the council, skeptical of both sides. Choices: present the ledger (condition: **Agent's Ledger**, no roll) → `hearing_evidence`; Rachael addresses the council (persuasion 13) → `hearing_speech`; live demonstration — five masters work one pattern in concert (performance 12) → `hearing_demo`. |
 | `hearing_evidence` | static | condition-gated | **Council's Favor** | The ledger proves espionage and coercion. The council turns. → `corso_cornered`. |
 | `hearing_speech` | resolve | via persuasion 13 | pass: **Council's Favor** | Rachael's Ch1 flaw pays off: "I know what undervaluing craft looks like — I've done it to myself." Fail: council splits → offered `hearing_demo`. → `corso_cornered`. |
 | `hearing_demo` | resolve | via performance 12 | pass: **Council's Favor** | The thesis made visible: the room watches five techniques become one fabric. Fail: still moving, but no Favor. → `corso_cornered`. |
 | `corso_cornered` | static | — | — | Corso politically beaten. Devon's Ch1 line pays off ("He's scared. People who do this are always scared of the real thing."). Choices: offer him a seat at the table — as a *merchant*, distribution not production (persuasion 12, `preferChar: "devon"`) → `corso_redeem`; let the council deal with him → `corso_ruin`. |
-| `corso_redeem` | resolve | via persuasion 12 | pass: **Corso's Contract** | Pass: the monopolist becomes the Concord's distributor — on their terms. Fail: he refuses, walks → same epilogue as `corso_ruin`. → `ending_ch2`. |
-| `corso_ruin` | static | — | — | He falls; a colder note in the epilogue and a possible Ch3 loose thread. → `ending_ch2`. |
+| `corso_redeem` | resolve | via persuasion 12 | pass: **Corso's Contract** | Pass: the monopolist becomes the Concord's distributor — on their terms. Fail: he refuses — **Councilwoman Maren** (NPC, non-player) steps in and forces the same terms by council vote. Either way → `ending_ch2` with Corso neutralized. Maren's intervention is colder ("This isn't mercy, merchant. This is regulation.") but the Ch3 trigger still fires: Corso is bound to the Concord, willing or coerced. |
+| `corso_ruin` | static | — | — | Player chose no mercy. **Councilwoman Maren** (NPC) formally strips Corso's guild license. He's done — but his agent network survives (Ch3 seed: the agents go rogue without a handler). Maren's vote makes the outcome *official*, not just dramatic. → `ending_ch2`. |
 | `ending_ch2` | resolve(–, inventory) | — | — | Graded ending, same mechanism as Ch1 `accept_quest`. Quest log + tapestry scene: five masters, first threads. Liz closer + Ch3 hook ("The tapestry is your final exam. It's worth 100% of your grade." / Devon: "OF WHICH CLASS?"). Restart → `ch2_intro`. |
 
-**Grading logic** (mirrors Ch1's item-count tiers): the three Alliances always print ✅; total items ≥ 9 → A-range, ≥ 6 → B+, else C+. Bonus Liz line if all three SWAP-SLOT beats were passed by their spotlight character (checkable via **Guild Gate Key** + **Agent's Ledger**-via-sneak + Devon path flags — see D3). **Corso's Contract** upgrades the epilogue text, not the grade (mercy shouldn't be min-maxed).
+**Councilwoman Maren** — non-player NPC introduced in `hearing_hall`. Serves as the narrative guarantor: regardless of which path the player takes or whether persuasion rolls pass or fail, Maren's council authority ensures the Corso resolution *sticks* and the Ch3 trigger fires. She's the legal weight behind whatever the party accomplishes socially.
+
+**Grading logic** (mirrors Ch1's item-count tiers): the three Alliances always print ✅; total items ≥ 9 → A-range, ≥ 6 → B+, else C+. **Corso's Contract** upgrades the epilogue text, not the grade (mercy shouldn't be min-maxed).
+
+**Spotlight dice amplification** (D3): when a `preferChar` roll is made by the *preferred* character, amplify the result cosmetically. Nat 20 → "WINNER WINNER" flash banner + extra Liz commentary ("Show-off. A+."). Nat 1 → "EPIC FAIL" flash + Liz roast + extra party banter. This is visual only — the pass/fail mechanic is unchanged. Builder adds a one-line `isSpotlight` flag to `DiceRollPanel` when the rolling character matches `preferChar`; no persistent tracking, no inventory pollution.
 
 ---
 
@@ -230,19 +234,23 @@ Cross-scene payoffs: Spun Starlight → `kenji_thread`; Corso Timetable → `tow
 
 ## 8. Engine deltas required (Builder's list — small)
 
-1. Title bar: `"Ch.1 — Prof. Liz's Assignment"` → chapter-aware string (`scattered-guild.jsx:1428`).
-2. Restart target: `"intro"` → `"ch2_intro"` in the ending scene and `handleChoice` restart (`:1336`, `:899`).
-3. No `SKILL_STATS` changes — every check above uses an existing skill.
-4. No schema changes — `condition`, `preferChar`, `addItem`, `resolve` all already supported.
-5. The two conditional-routing joins (`sora_joins`/`tadashi_joins`) use existing `condition` on choices — but note the engine *hides* failed-condition choices, so each must carry both choices with complementary conditions or the player can strand. Builder must test both arc orders.
-6. Known bug (handoff): every check-entered scene here uses `resolve` — the `checkedResolveRef` path. No `text`+`resolve` mixing.
+1. **New file**: Ch2 is its own `scattered-guild-ch2.jsx` + `scattered-guild-ch2.html` (D2). Shares `CHARACTERS`, `SKILL_STATS`, helper functions, and all UI components from Ch1 (import or copy). Ch2 has its own `SCENES` object, its own `Game()` entry point starting at `ch2_intro`.
+2. Title bar: `"Ch.2 — The Concord's Voyage"`.
+3. Restart target: `"ch2_intro"` in `ending_ch2` and `handleChoice` restart.
+4. No `SKILL_STATS` changes — every check uses an existing skill.
+5. No schema changes — `condition`, `preferChar`, `addItem`, `resolve` all already supported.
+6. The two conditional-routing joins (`sora_joins`/`tadashi_joins`) use existing `condition` on choices — but note the engine *hides* failed-condition choices, so each must carry both choices with complementary conditions or the player can strand. Builder must test both arc orders.
+7. Known bug (handoff): every check-entered scene here uses `resolve` — the `checkedResolveRef` path. No `text`+`resolve` mixing.
+8. **Spotlight amplification** (D3): add `isSpotlight` boolean to `DiceRollPanel` — true when rolling character matches `preferChar`. On nat 20: "WINNER WINNER" flash banner, bonus Liz quip, extra glow animation. On nat 1: "EPIC FAIL" flash, Liz roast, party banter. Visual only — does not change pass/fail outcome or persist anything.
 
-## 9. Open decisions for review
+## 9. Decisions (locked 2026-09-07)
 
-- **D1 — Chapter 1 carryover.** Options: (a) fixed canon start + recap scene (this blueprint; zero engine work, matches per-session inventory reset), or (b) real state import (localStorage/props; engine work, Ch1 grade could seed Ch2). Blueprint assumes (a).
-- **D2 — One file or two chapters in one.** Options: (a) Ch2 as its own SCENES object/file, (b) merged with Ch1 into one continuous game. (a) keeps files small; (b) enables true carryover with D1(b).
-- **D3 — Spotlight-bonus tracking.** The "all three spotlight beats" Liz bonus needs to know *who* rolled, which the inventory doesn't record. Options: (a) drop the bonus (zero cost), (b) add per-character flag items like "Marcus's Moment" via addItem on the preferChar pass branches (works today, slightly pollutes the item bar).
-- **D4 — Corso redemption as default path.** The mercy option is Devon-flavored and on-theme, but it does soften the antagonist for Ch3. If Ch3 needs a villain, `corso_ruin` should seed a successor (the Merchant Council itself, or an agent who kept copies).
+| # | Decision | Resolution | Rationale |
+|---|---|---|---|
+| D1 | Chapter 1 carryover | **Fixed canon start** | Correct for 1–4 NPC-filled slots; real stat import when actual students join |
+| D2 | File structure | **Separate file** (`scattered-guild-ch2.jsx`) | Keeps files small, independent |
+| D3 | Spotlight tracking | **Amplified dice feedback only** — "WINNER WINNER" on nat 20, "EPIC FAIL" on nat 1, when preferred char rolls their spotlight check | No persistent tracking, no inventory pollution; just a flash moment |
+| D4 | Corso resolution guarantee | **NPC guarantor (Councilwoman Maren)** ensures Corso trigger fires regardless of player path or roll outcome | Corso neutralized on every branch; Ch3 seed differs by path (willing contract vs. rogue agents) |
 
 ---
-*Architect stops here. No scenes written to the engine; nothing runs until this is approved.*
+*Decisions locked. Blueprint approved for build.*
