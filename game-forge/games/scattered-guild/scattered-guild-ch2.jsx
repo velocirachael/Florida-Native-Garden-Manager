@@ -1,0 +1,2366 @@
+import { useState, useCallback, useEffect, useRef } from "react";
+
+// ——— CHARACTER DATA (shared with Ch1) ———
+const CHARACTERS = {
+  rachael: {
+    name: "Rachael",
+    title: "Artificer / Bard",
+    level: 12,
+    hp: 88,
+    maxHp: 88,
+    stats: { STR: 8, DEX: 14, CON: 13, INT: 17, WIS: 15, CHA: 15 },
+    skills: ["persuasion","insight","investigation","sleightOfHand","arcana","performance","animalHandling","history","nature"],
+    tools: ["Herbalism kit","Calligrapher's supplies","Weaver's tools","Tinker's tools"],
+    flaw: "Undercharges for services",
+    bond: "The Delegation. The garden.",
+    color: "#7b8fc9",
+    pixel: [
+      "..1111..",
+      ".111111.",
+      "11133111",
+      "11133111",
+      ".112211.",
+      "..1221..",
+      ".144441.",
+      "14444441",
+      "14444441",
+      ".144441.",
+      "..4444..",
+      ".44..44.",
+    ],
+    palette: { "1": "#4a3728", "2": "#e8d4b8", "3": "#5588bb", "4": "#2d4a7a" },
+  },
+  marcus: {
+    name: "Marcus",
+    title: "Fighter / Wizard",
+    level: 11,
+    hp: 95,
+    maxHp: 95,
+    stats: { STR: 16, DEX: 10, CON: 15, INT: 16, WIS: 12, CHA: 9 },
+    skills: ["athletics","arcana","investigation","intimidation","perception","history"],
+    tools: ["Smith's tools","Mason's tools"],
+    flaw: "Overthinks before acting; analysis paralysis",
+    bond: "The server room. The weight rack.",
+    color: "#c97b7b",
+    pixel: [
+      "..2222..",
+      ".222222.",
+      "22233222",
+      "22233222",
+      ".221122.",
+      "..2112..",
+      ".155551.",
+      "15555551",
+      "15555551",
+      ".155551.",
+      "..5555..",
+      ".55..55.",
+    ],
+    palette: { "1": "#1a1a1a", "2": "#3d2b1a", "3": "#8b7355", "4": "#cc4444", "5": "#8b1a1a" },
+  },
+  jade: {
+    name: "Jade",
+    title: "Rogue / Ranger",
+    level: 11,
+    hp: 78,
+    maxHp: 78,
+    stats: { STR: 10, DEX: 17, CON: 12, INT: 14, WIS: 16, CHA: 11 },
+    skills: ["stealth","perception","survival","sleightOfHand","investigation","nature","acrobatics"],
+    tools: ["Thieves' tools","Poisoner's kit","Navigator's tools"],
+    flaw: "Trusts data over people; slow to ask for help",
+    bond: "The trail. The terminal.",
+    color: "#7bc97b",
+    pixel: [
+      "..3333..",
+      ".333333.",
+      "33344333",
+      "33344333",
+      ".331133.",
+      "..3113..",
+      ".166661.",
+      "16666661",
+      "16666661",
+      ".166661.",
+      "..6666..",
+      ".66..66.",
+    ],
+    palette: { "1": "#2d2d2d", "2": "#e8d4b8", "3": "#2a1a0a", "4": "#6b4e2a", "5": "#44aa44", "6": "#2d5a2d" },
+  },
+  devon: {
+    name: "Devon",
+    title: "Cleric / Sorcerer",
+    level: 11,
+    hp: 82,
+    maxHp: 82,
+    stats: { STR: 9, DEX: 12, CON: 14, INT: 13, WIS: 17, CHA: 16 },
+    skills: ["medicine","insight","persuasion","religion","performance","perception","deception"],
+    tools: ["Herbalism kit","Cook's utensils","Painter's supplies"],
+    flaw: "Takes on others' emotional burdens; burns out quietly",
+    bond: "The studio. The group chat.",
+    color: "#c9b87b",
+    pixel: [
+      "..4444..",
+      ".444444.",
+      "44411444",
+      "44411444",
+      ".442244.",
+      "..4224..",
+      ".177771.",
+      "17777771",
+      "17777771",
+      ".177771.",
+      "..7777..",
+      ".77..77.",
+    ],
+    palette: { "1": "#e8d4b8", "2": "#7b5533", "3": "#dda0dd", "4": "#5a3a1a", "5": "#ffcc44", "7": "#6b4e8a" },
+  },
+};
+
+const SKILL_STATS = {
+  persuasion:"CHA", insight:"WIS", nature:"WIS", investigation:"INT",
+  sleightOfHand:"DEX", arcana:"INT", performance:"CHA", animalHandling:"WIS",
+  history:"INT", athletics:"STR", intimidation:"CHA", perception:"WIS",
+  stealth:"DEX", survival:"WIS", acrobatics:"DEX", medicine:"WIS",
+  religion:"INT", deception:"CHA",
+};
+
+function getMod(val) { return Math.floor((val - 10) / 2); }
+function getProf(level) { return Math.ceil(level / 4) + 1; }
+
+function rollFor(charId, skillName) {
+  const char = CHARACTERS[charId];
+  const stat = SKILL_STATS[skillName];
+  const mod = getMod(char.stats[stat]);
+  const prof = getProf(char.level);
+  const isProficient = char.skills.includes(skillName);
+  const bonus = mod + (isProficient ? prof : Math.floor(prof / 2));
+  const d20 = Math.floor(Math.random() * 20) + 1;
+  return { d20, bonus, total: d20 + bonus, nat20: d20 === 20, nat1: d20 === 1, charId, skillName };
+}
+
+// ——— PIXEL SPRITE ———
+function PixelSprite({ charId, size = 4, style: extraStyle }) {
+  const char = CHARACTERS[charId];
+  if (!char) return null;
+  const rows = char.pixel;
+  const palette = char.palette;
+  return (
+    <div style={{ display: "inline-block", lineHeight: 0, ...extraStyle }}>
+      {rows.map((row, y) => (
+        <div key={y} style={{ display: "flex" }}>
+          {row.split("").map((c, x) => (
+            <div key={x} style={{
+              width: size, height: size,
+              background: c === "." ? "transparent" : (palette[c] || "#888"),
+            }} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ——— CHAPTER 2 SCENES ———
+const SCENES = {
+
+  // ═══════════════════════════════════════
+  // ACT 0 — EMBARK
+  // ═══════════════════════════════════════
+
+  ch2_intro: {
+    title: "Chapter Two Begins",
+    speaker: "liz",
+    text: `The classroom reforms around you. Same fluorescent lights. Same whiteboard. Same Professor Liz, adjusting her glasses with that look.
+
+"Chapter Two starts Monday." She checks her watch. "It's Monday."
+
+Marcus: "We just finished Chapter One."
+Liz: "And? Time is a construct. Your grade is not."
+
+She taps her laptop. The classroom dissolves again — faster this time, like it remembers. The fountain in Floridae's town square materializes. Dawn light. Salt air.
+
+"Last time you found two masters and made an enemy. This time you find three more and face him. Also — there may be a midterm."
+
+Devon: "You SAID there wasn't a midterm!"
+Liz: "I said '...' That's not a no."`,
+    choices: [
+      { text: "Review the party", next: "party_view2", icon: "\u{1F4CB}" },
+      { text: "Head to the town square", next: "recap_square", icon: "\u{1F305}" },
+    ],
+  },
+
+  party_view2: {
+    title: "The Party — Chapter Two",
+    text: `The character sheets glow again. Professor Liz's margin notes have been updated.
+
+Next to Rachael's sheet: "Builder. Connector. Still undercharges — but recognized it in someone else. Progress."
+Next to Marcus's sheet: "Hit hard, thought harder. Needs to trust the thinking IS the doing."
+Next to Jade's sheet: "Mapped every exit. Now map the people."
+Next to Devon's sheet: "Held everyone together. Remember: your HP matters too."
+
+The sheets settle into your packs. Time to move.`,
+    choices: [
+      { text: "Head to the square", next: "recap_square", icon: "\u{2694}️" },
+    ],
+    showPartyDetail: true,
+  },
+
+  recap_square: {
+    title: "The Fountain at Dawn",
+    text: `Floridae's town square. The fountain where it all started.
+
+Two figures wait by the basin: Yuki, the Thread-Spinner, and Hana, the Dyer. Hana's hands are still indigo to the elbows. Yuki's silver hair catches the first light.
+
+"You came back," Yuki says. Not surprised — relieved.
+
+Behind them, moored at the far dock: the Painted Shuttle. Captain Tomoe's ship. The crew is loading supplies.
+
+Hana: "The tide turns in an hour. Tomoe says she can take you to Kenji's port up north."
+
+Yuki: "Find him. Find Sora and Tadashi. Then come home. We have a tapestry to finish."
+
+Marcus is already calculating supply weights. Jade is checking wind patterns. Devon is making sure Yuki ate breakfast.`,
+    choices: [
+      { text: "Ask Yuki for a token before you go", next: "yuki_gift", icon: "\u{1F9F5}" },
+      { text: "Board the Painted Shuttle", next: "voyage_embark", icon: "\u{26F5}" },
+    ],
+  },
+
+  yuki_gift: {
+    title: "Spun Starlight",
+    text: `Rachael pauses at the fountain's edge. "Yuki — do you have anything that might help us reach Kenji? Something from the old days?"
+
+Yuki's hands go still. Then she reaches into her sleeve and produces a single spool of thread so fine it's nearly invisible. In the dawn light, it shimmers between silver and gold.
+
+"I spun this the night the Concord fell. I was going to use it for the tapestry's first thread. Take it."
+
+She presses it into Rachael's palm. It weighs almost nothing.
+
+"If Kenji sees this, he'll know I sent you. He'll know the Concord still lives."
+
+Devon, quietly: "That's beautiful."
+Marcus, also quietly: "...Yeah."
+Jade is writing something in her notebook very fast.`,
+    choices: [
+      { text: "Board the Painted Shuttle", next: "voyage_embark", icon: "\u{26F5}" },
+    ],
+    addItem: "Spun Starlight",
+  },
+
+  // ═══════════════════════════════════════
+  // ACT 1 — VOYAGE & NORTHERN PORT
+  // ═══════════════════════════════════════
+
+  voyage_embark: {
+    title: "The Painted Shuttle",
+    text: `Captain Tomoe's ship cuts north through emerald water. The crew moves with practiced ease — rope AND needle, every one of them wearing guild-marked vests.
+
+Two hours out, the sky changes. Clouds stack like grey wool on the horizon. Tomoe squints.
+
+"Storm. We can punch through it, chart around it, or batten down and ride it out. Your call — you're passengers, but I've seen how you work."
+
+Marcus eyes the rigging. Jade checks the charts. Devon is already securing loose cargo.
+
+The wind picks up.`,
+    choices: [
+      { text: "Hit the rigging — muscle through the storm", next: "storm_rigging", check: "athletics", dc: 12, icon: "\u{1F4AA}" },
+      { text: "Chart a course around it", next: "storm_chart", check: "survival", dc: 13, icon: "\u{1F5FA}️" },
+      { text: "Secure the cargo below — ride it out safely", next: "voyage_below", icon: "\u{1F4E6}" },
+    ],
+  },
+
+  storm_rigging: {
+    title: "Into the Storm",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 12) {
+        return {
+          text: `${name} climbs the rigging as the first wave hits. Rain like needles. Wind like fists. The mainsheet has come loose and the boom is swinging.
+
+${name} catches the rope, wraps it twice, and hauls. The sail snaps taut. The ship steadies.
+
+Tomoe, from the wheel: "Not bad. Not bad at all."
+
+The crew nods — respect earned the old way. When the storm breaks an hour later, the northern coast is already visible.
+
+Marcus ${result.charId === "marcus" ? "grins through the rain" : "is impressed despite himself"}.
+Devon is soaked but smiling.
+Jade somehow kept her notebook dry.`,
+          choices: [
+            { text: "Make port", next: "port_arrival", icon: "\u{2693}" },
+          ],
+          addItem: "Crew's Respect",
+        };
+      } else {
+        return {
+          text: `${name} reaches for the loose mainsheet but the deck lurches. Feet slip on wet wood. For one terrible second —
+
+Tomoe is there. One hand on the wheel, one hand catching ${name}'s belt. "I've got you."
+
+The crew handles the rigging. The storm passes. No one was hurt, but the rescue stings.
+
+"Don't look so grim," Tomoe says. "The sea tests everyone. It's what you do AFTER that counts."`,
+          choices: [
+            { text: "Make port", next: "port_arrival", icon: "\u{2693}" },
+          ],
+        };
+      }
+    },
+  },
+
+  storm_chart: {
+    title: "Reading the Wind",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 13) {
+        return {
+          text: `${name} spreads the charts on the navigation table, weighting the corners against the roll. Current patterns, depth soundings, the shape of the approaching front —
+
+"There." ${name} traces a line. "If we come about fifteen degrees east, we catch the edge of the storm but miss the worst. The current does half the work."
+
+Tomoe studies the chart. Studies ${name}. Smiles.
+
+"Crew! Come about — fifteen east!"
+
+They skirt the storm's edge in two hours. Rain, but no danger. The northern coast appears through mist like a painting.
+
+The crew raises mugs at dinner. Navigator's share.`,
+          choices: [
+            { text: "Make port", next: "port_arrival", icon: "\u{2693}" },
+          ],
+          addItem: "Crew's Respect",
+        };
+      } else {
+        return {
+          text: `The charts are good but the storm is faster than ${name} calculated. They dodge the worst of it, but the detour costs three hours.
+
+Tomoe doesn't criticize. "The sea doesn't read charts," she says. "But you were close."
+
+They make the northern port by afternoon instead of morning. Time lost, but everyone's safe.`,
+          choices: [
+            { text: "Make port", next: "port_arrival", icon: "\u{2693}" },
+          ],
+        };
+      }
+    },
+  },
+
+  voyage_below: {
+    title: "Below Decks",
+    text: `While the storm rages above, the party secures cargo below. It's quiet work — methodical, safe. Devon brews tea from the galley supplies. The ship rocks but holds.
+
+Tomoe joins them during a lull, rain dripping from her coat.
+
+"You want to know about Kenji." Not a question.
+
+She sits. Wraps her hands around a mug.
+
+"His hands started shaking the week the Concord fell. Not from age — he was young. Not from injury. From grief. The embroidery was his language, and when the guild broke, he lost the people who spoke it."
+
+She stares into the steam.
+
+"He still embroiders. Slowly. Alone. But the shaking gets worse when he thinks no one needs what he makes."
+
+Devon: "So we need to show him someone does."
+Tomoe: "You need to show him five someones do."
+
+The storm breaks. The northern coast appears.`,
+    choices: [
+      { text: "Make port", next: "port_arrival", icon: "\u{2693}" },
+    ],
+    addItem: "Tomoe's Stories",
+  },
+
+  port_arrival: {
+    title: "The Northern Port",
+    text: `The port is smaller than Floridae — fishing boats and merchant vessels, salt-crusted docks, the smell of cedar and brine.
+
+And there, on the main pier: two men in expensive coats, writing in ledgers. Checking manifests. Noting arrivals.
+
+Jade's eyes narrow. "Corso's buyers. Same ledgers as Floridae."
+
+They haven't noticed the Painted Shuttle yet. Tomoe's crew is pulling in at the far dock, away from the main pier.
+
+"Kenji's workshop is in the old embroidery district," Tomoe says. "Guild Lane. Through the market and up the hill. But those agents might be headed the same way."
+
+Three options.`,
+    choices: [
+      { text: "Talk to the harbormaster for directions", next: "harbormaster", check: "persuasion", dc: 12, icon: "\u{1F4AC}" },
+      { text: "Tail one of Corso's buyers", next: "tail_buyer", check: "stealth", dc: 13, icon: "\u{1F575}️" },
+      { text: "Follow Tomoe's directions straight to Guild Lane", next: "guild_lane", icon: "\u{1F6E4}️" },
+    ],
+  },
+
+  harbormaster: {
+    title: "The Harbormaster",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 12) {
+        return {
+          text: `The harbormaster is a weathered woman with ink-stained fingers and a memory for faces.
+
+${name} mentions the embroidery district. Her expression shifts.
+
+"Guild Lane? Most of it's shuttered. But there's one workshop still lit — old man, keeps to himself. Embroiders all day."
+
+She leans closer. "Two men were asking about him yesterday. Well-dressed. Ledgers. They wanted to know his schedule, his output, who visits. I didn't tell them much."
+
+She gives directions — and a warning: "Whatever you're doing, do it before those ledger-men come back."`,
+          choices: [
+            { text: "Head to Guild Lane", next: "guild_lane", icon: "\u{1F6E4}️" },
+          ],
+          addItem: "Harbor Warning",
+        };
+      } else {
+        return {
+          text: `The harbormaster is busy and distracted. "Guild Lane? Up the hill, past the fish market. Can't miss it."
+
+No extra intel. Just directions.
+
+Marcus: "We could still try tailing those buyers..."`,
+          choices: [
+            { text: "Head to Guild Lane", next: "guild_lane", icon: "\u{1F6E4}️" },
+            { text: "Tail a buyer first", next: "tail_buyer", check: "stealth", dc: 13, icon: "\u{1F575}️" },
+          ],
+        };
+      }
+    },
+  },
+
+  tail_buyer: {
+    title: "Following the Ledger",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 13) {
+        return {
+          text: `${name} shadows one of Corso's agents through the port market. The man stops at a tea stall, pulls out a sealed letter, and reads it while eating.
+
+Close enough to read over his shoulder:
+
+"...Archive Tower shipment delayed. Redirect northern team to secure pattern catalog before the old man moves it. Priority: Tadashi's index. Corso wants it by month's end..."
+
+The agent folds the letter and heads east — away from Guild Lane. Toward the interior road.
+
+${name} reports back. The party's mood shifts.
+
+Jade: "They're going after Tadashi at the Archive Tower."
+Marcus: "Then we need to get there first — after Kenji."
+Devon: "One crisis at a time."`,
+          choices: [
+            { text: "Head to Guild Lane for Kenji", next: "guild_lane", icon: "\u{1F6E4}️" },
+          ],
+          addItem: "Corso Timetable",
+        };
+      } else {
+        return {
+          text: `${name} follows the agent for two blocks before losing him in the market crowd. Too many stalls, too many bodies.
+
+"Gone," ${name} says. "But he was headed east, not toward Guild Lane. That's something."
+
+Marcus: "East is interior. Away from the port."
+Jade: "Noted. Let's focus on Kenji."`,
+          choices: [
+            { text: "Head to Guild Lane", next: "guild_lane", icon: "\u{1F6E4}️" },
+          ],
+        };
+      }
+    },
+  },
+
+  guild_lane: {
+    title: "Guild Lane",
+    text: `The embroidery district is a ghost of its former self. Shuttered workshops, faded guild signs, windows dark behind iron grates. The cobblestones are still stained with old dye — indigo, saffron, madder — like bruises that never healed.
+
+At the end of the lane: an iron gate. Behind it, one workshop still shows light through the shutters.
+
+The gate is locked — not a padlock, but a mechanical guild lock. Five rotating discs, each etched with guild symbols. A puzzle built to keep out anyone who doesn't know the Weavers' Concord's patterns.
+
+Marcus stares at it. You can practically see the gears turning behind his eyes.
+
+Jade looks up. "There's a rooftop route — over the tanner's shop, across to the balcony."`,
+    choices: [
+      { text: "Solve the guild lock", next: "puzzle_lock", check: "investigation", dc: 12, preferChar: "marcus", icon: "\u{1F513}" },
+      { text: "Take the rooftops", next: "rooftop_way", check: "acrobatics", dc: 13, icon: "\u{1F3D7}️" },
+    ],
+  },
+
+  puzzle_lock: {
+    title: "The Five-Stage Lock",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 12) {
+        return {
+          text: `${name} studies the lock. Five discs. Each has twelve positions. That's 248,832 combinations.
+
+"Give me a minute."
+
+The party waits. Five minutes pass. Ten.
+
+Devon: "Should we—"
+Rachael: "Wait."
+
+${name}'s hands move. Click. Click. Click-click. Click.
+
+The gate swings open.
+
+${result.charId === "marcus"
+  ? `"Analysis paralysis," Marcus says, grinning. "Turns out sometimes the answer IS thinking about it for ten minutes."`
+  : `Marcus stares. "I was about to solve that." Jade: "Sure you were."`}
+
+The lane beyond is quiet. One door, one light.`,
+          choices: [
+            { text: "Approach Kenji's workshop", next: "kenji_found", icon: "\u{1F6AA}" },
+          ],
+          addItem: "Guild Gate Key",
+        };
+      } else {
+        return {
+          text: `${name} works the discs for ten minutes. The mechanism is elegant but dense — each position affects the others. Two discs in, something jams.
+
+"It's not wrong," ${name} says, frustrated. "It's just... there are too many variables at once."
+
+Marcus ${result.charId === "marcus" ? "kicks the gate post" : "sighs"}.
+
+Jade, already halfway up the tanner's wall: "Rooftops still work."`,
+          choices: [
+            { text: "Take the rooftops", next: "rooftop_way", check: "acrobatics", dc: 13, icon: "\u{1F3D7}️" },
+          ],
+        };
+      }
+    },
+  },
+
+  rooftop_way: {
+    title: "Over the Rooftops",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 13) {
+        return {
+          text: `${name} scales the tanner's wall, crosses the flat roof, and drops to Kenji's balcony with barely a sound. The door from the balcony is unlocked — artisans always leave a way in for friends.
+
+${name} opens the iron gate from the inside. The rest of the party files through.
+
+Jade: "Efficient."
+Marcus: "Show-off."
+Devon: "Can we focus?"`,
+          choices: [
+            { text: "Approach Kenji's workshop", next: "kenji_found", icon: "\u{1F6AA}" },
+          ],
+        };
+      } else {
+        return {
+          text: `${name} makes it up the wall and across the roof, but the landing on the balcony is louder than planned. A clay pot shatters. Pigeons scatter.
+
+From inside the workshop, a voice: "Who's there?"
+
+Not ideal. But ${name} opens the gate for the others, and at least they're in.
+
+Devon: "So much for subtle."`,
+          choices: [
+            { text: "Answer him — you're already here", next: "kenji_found", icon: "\u{1F6AA}" },
+          ],
+        };
+      }
+    },
+  },
+
+  kenji_found: {
+    title: "Kenji the Embroiderer",
+    text: `The workshop is small and meticulously organized. Frames of unfinished embroidery line the walls — flowers, waves, geometric patterns so precise they look printed. But up close, every stitch is hand-placed.
+
+Kenji sits at his table. He's younger than Yuki but looks older — hollowed out, careful. His hands rest on the table, trembling slightly.
+
+He looks at the party. At the guild marks on Tomoe's vest, visible through the door. At Rachael's weaver's tools.
+
+"Tomoe shouldn't have brought you."
+
+His voice is steady even if his hands aren't.
+
+"A needle I can't hold is a needle I don't own. I'm no use to anyone."
+
+The trembling is worse now. He's gripping the table edge.`,
+    choices: [
+      { text: "Devon — reach him where the grief is", next: "kenji_heart", check: "insight", dc: 11, preferChar: "devon", icon: "\u{1F49B}" },
+      { text: "Rachael — talk about the craft, not the hands", next: "kenji_craft", check: "history", dc: 12, icon: "\u{1F4D6}" },
+      { text: "Show him Yuki's thread", next: "kenji_thread", condition: (inv) => inv.includes("Spun Starlight"), icon: "\u{1F9F5}" },
+    ],
+  },
+
+  kenji_heart: {
+    title: "Naming the Grief",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 11) {
+        return {
+          text: `${name} pulls a stool to the table and sits. Doesn't reach for Kenji's hands. Doesn't try to fix.
+
+"Your hands didn't start shaking because you got old," ${name} says quietly. "They started shaking the week the Concord fell."
+
+Kenji goes still.
+
+"It's not the needle. It's the silence. You lost the people who understood what you make, and your hands are grieving what your mouth won't say."
+
+${result.charId === "devon"
+  ? "Devon holds the silence. Doesn't fill it. Lets it breathe."
+  : `Devon nods. "That's exactly it."`}
+
+Kenji's grip on the table loosens. His hands are still trembling. But something in his face has shifted.
+
+"...Yuki's alive?"
+
+"Alive and waiting," Rachael says. "With Hana."
+
+"Two of five," Kenji whispers. Then, almost a question: "Three of five?"`,
+          choices: [
+            { text: "\"We're finding all of them.\"", next: "kenji_joins", icon: "\u{2694}️" },
+          ],
+        };
+      } else {
+        return {
+          text: `${name} tries to reach him, but Kenji pulls back. The words are kind, but he's heard kind words before. They don't make his hands stop shaking.
+
+"You mean well," he says. "But meaning well isn't enough."
+
+He turns back to his table.`,
+          choices: [
+            { text: "Try the craft approach", next: "kenji_craft", check: "history", dc: 12, icon: "\u{1F4D6}" },
+            { text: "Show him Yuki's thread", next: "kenji_thread", condition: (inv) => inv.includes("Spun Starlight"), icon: "\u{1F9F5}" },
+          ],
+        };
+      }
+    },
+  },
+
+  kenji_craft: {
+    title: "The Knowledge Outlives the Hands",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 12) {
+        return {
+          text: `${name} walks to the wall of unfinished embroidery. Studies it. Points to a pattern.
+
+"This stitch — the compound chain with the offset return. That's a Concord technique. No guild book teaches it. It only exists because you know it."
+
+Kenji stares.
+
+"Your hands might shake. But the knowledge doesn't. You don't have to stitch, Kenji. You have to TEACH."
+
+The word hits him like cold water. His mouth opens. Closes.
+
+"Teach," he repeats. Testing it.
+
+Marcus: "The technique can live in other hands. But only if you show them how."
+Jade: "We have a loom-singer who's forgotten her song and a pattern-keeper who won't leave his tower. You're the embroiderer. You know the stitches."
+
+Kenji looks at his trembling hands. For the first time, like they might still be useful.
+
+"...Who's left?"`,
+          choices: [
+            { text: "\"Everyone. We're finding all of them.\"", next: "kenji_joins", icon: "\u{2694}️" },
+          ],
+        };
+      } else {
+        return {
+          text: `${name} tries to connect through the craft, but Kenji's walls are high. "You can see the stitches. That doesn't mean you understand what it cost to learn them."
+
+Fair point. He's not wrong. But there might be another way in.`,
+          choices: [
+            { text: "Devon — try reaching him emotionally", next: "kenji_heart", check: "insight", dc: 11, preferChar: "devon", icon: "\u{1F49B}" },
+            { text: "Show him Yuki's thread", next: "kenji_thread", condition: (inv) => inv.includes("Spun Starlight"), icon: "\u{1F9F5}" },
+          ],
+        };
+      }
+    },
+  },
+
+  kenji_thread: {
+    title: "Spun Starlight",
+    text: `Rachael reaches into her pack and produces the spool. Yuki's thread. Spun the night the Concord fell.
+
+She sets it on the table without a word.
+
+Kenji's hands stop shaking.
+
+Not gradually. Not slowly. They just — stop. He picks up the spool with steady fingers and holds it to the lamplight. The thread shimmers between silver and gold.
+
+"She kept it," he says. His voice breaks on the second word. "She spun this for the tapestry. For all of us."
+
+He sets the spool down gently. Looks at the party.
+
+"Where are the others?"
+
+Marcus: "Sora's in the Singing Caves. Tadashi's at the Archive Tower."
+Jade: "And Corso's agents are looking for them."
+
+Kenji stands. For the first time, he looks like someone who has somewhere to go.
+
+"Then we'd better move."`,
+    choices: [
+      { text: "Welcome him to the party", next: "kenji_joins", icon: "\u{2694}️" },
+    ],
+  },
+
+  kenji_joins: {
+    title: "The Embroiderer Joins",
+    text: `Kenji packs light — a case of needles (fine as eyelashes, each one hand-forged), spools of silk in twenty colors, and a leather folio of pattern drafts.
+
+From the folio, he produces a single needle with a guild mark on the eye. It's longer than the others, heavier.
+
+"My pattern needle. The other masters will recognize it — it was my seat at the Concord's table."
+
+He hands it to Rachael. "You're the connector. You should carry it."
+
+Devon checks Kenji's supplies. Marcus works out travel logistics. Jade has already updated her spreadsheet.
+
+"Two down," Tomoe says from the doorway. "Three to go."
+
+Professor Liz's voice, from somewhere overhead: "Progress. B-plus — pending field work."
+
+Devon: "Does she ever actually LEAVE?"
+Liz: "No."`,
+    choices: [
+      { text: "Head to the Singing Caves — find Sora", next: "caves_travel", icon: "\u{1F3B5}" },
+      { text: "Head to the Archive Tower — find Tadashi", next: "tower_travel", icon: "\u{1F3DB}️" },
+    ],
+    addItems: ["Kenji's Alliance", "Kenji's Pattern Needle"],
+  },
+
+  // ═══════════════════════════════════════
+  // ACT 2A — SINGING CAVES (SORA / DEVON)
+  // ═══════════════════════════════════════
+
+  caves_travel: {
+    title: "The Inland Road",
+    text: `The Singing Caves are a day's walk inland — through cedar forest, along a river that gets louder as the terrain rises. The path is old, well-worn, marked with faded guild symbols carved into trailside stones.
+
+Marcus sets a good pace. Devon keeps everyone hydrated. Jade scouts ahead. Rachael reads the guild markers.
+
+Kenji walks in silence, but his hands are busy — stitching a small piece as he walks, fingers still unsteady but moving.
+
+"The caves are named for the acoustics," he says. "Sora used to sing patterns there — her voice would echo through chambers and come back in harmony with itself. Like the cave was singing with her."
+
+"Used to?" Devon asks.
+
+Kenji's hands pause. "She hasn't sung since the Concord fell."
+
+The forest opens. Ahead: a cliff face pocked with dark openings. The Singing Caves.
+
+Silent.`,
+    choices: [
+      { text: "Enter the caves", next: "caves_mouth", icon: "\u{1F573}️" },
+    ],
+  },
+
+  caves_mouth: {
+    title: "The Silent Caves",
+    text: `The main entrance is wide enough for a cart. Inside: smooth stone, high ceilings, the smell of mineral water. Every sound you make — footsteps, breathing, the clink of gear — should echo.
+
+It doesn't. The acoustics that made these caves famous are dead. Your voices land flat, absorbed. Like the cave is holding its breath.
+
+"This isn't right," Kenji says. "These caves should sing."
+
+"Maybe they're waiting for someone to sing first," Devon says quietly.
+
+Three approaches.`,
+    choices: [
+      { text: "Listen — really listen — for any sound deeper in", next: "caves_listen", check: "perception", dc: 11, icon: "\u{1F442}" },
+      { text: "Sing into the dark — give the caves a reason to answer", next: "caves_sing", check: "performance", dc: 12, icon: "\u{1F3B5}" },
+      { text: "Go quietly deeper — don't announce yourselves", next: "caves_deep", icon: "\u{1F910}" },
+    ],
+  },
+
+  caves_listen: {
+    title: "Listening",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 11) {
+        return {
+          text: `${name} closes their eyes. Everyone else goes silent.
+
+At first: nothing. Stone. Dripping water. The party's own heartbeats.
+
+Then — barely there — a rhythm. Not music. Not a voice. A steady tap-tap-tap, like a shuttle on a loom. Coming from deep inside the leftmost passage.
+
+"There," ${name} whispers. "Someone's weaving. Or tapping out a pattern."
+
+Kenji's eyes widen. "That's a loom-rhythm. She's still working."
+
+The party has their bearings.`,
+          choices: [
+            { text: "Follow the rhythm deeper", next: "caves_deep", icon: "\u{1F3B6}" },
+          ],
+          addItem: "Cave Bearings",
+        };
+      } else {
+        return {
+          text: `${name} listens intently, but the silence is total. These caves are acoustically dead — or someone has made them so.
+
+"Nothing," ${name} says. "We go blind."
+
+The party moves deeper, choosing passages by torchlight.`,
+          choices: [
+            { text: "Press on into the caves", next: "caves_deep", icon: "\u{1F3B6}" },
+          ],
+        };
+      }
+    },
+  },
+
+  caves_sing: {
+    title: "A Song for the Caves",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 12) {
+        return {
+          text: `${name} hums — a simple melody, the kind that settles into stone. Not a performance. An offering.
+
+The caves are silent for a long moment.
+
+Then: an echo. Not ${name}'s melody reflected back, but something new — a harmony, rising from deeper in the cave system. Someone is answering. Someone who knows how to use these acoustics.
+
+The harmony fades, but it came from the left passage. And it wasn't hostile.
+
+"She heard us," Kenji says, and his voice is tight with something Rachael recognizes. Hope.
+
+Devon: "She answered."`,
+          choices: [
+            { text: "Follow the answering voice", next: "caves_deep", icon: "\u{1F3B6}" },
+          ],
+          addItem: "Answered Echo",
+        };
+      } else {
+        return {
+          text: `${name} sings into the dark. The melody is good — but the caves swallow it. No echo. No response.
+
+If anything, the silence deepens. Like something that was listening has drawn further back.
+
+"Maybe singing wasn't the play," Marcus mutters.
+
+Kenji: "Or maybe she needs to hear the right song."
+
+Either way: deeper.`,
+          choices: [
+            { text: "Press on into the caves", next: "caves_deep", icon: "\u{1F3B6}" },
+          ],
+        };
+      }
+    },
+  },
+
+  caves_deep: {
+    title: "The Loom-Singer's Camp",
+    text: `Three hours into the caves, the party finds her.
+
+A chamber lit by phosphorescent moss, big enough to hold a small house. A camp: bedroll, cooking gear, stacks of hand-drawn pattern sheets weighted with stones.
+
+And in the center: a woman sitting cross-legged before a frame loom, her hands still but her lips moving silently. No sound comes out.
+
+Sora. The Loom-Singer.
+
+She doesn't startle when she sees the party. She's been expecting visitors — or dreading them.
+
+"I heard you coming." Her voice is rough from disuse. "An hour ago. Two if you sang."
+
+Kenji steps forward. "Sora—"
+
+"Don't." She holds up a hand. "I know why you're here. The answer is no."
+
+Her voice was a fifth of something. Alone, it just echoes. She's been silent for years rather than hear herself incomplete.
+
+Devon looks at the camp. At the silent loom. At the woman who stopped singing because singing alone wasn't singing at all.`,
+    choices: [
+      { text: "Devon — share a meal, use the Resonance Bowl", next: "sora_reached", check: "persuasion", dc: 10, preferChar: "devon", icon: "\u{1F49B}" },
+      { text: "Rachael — offer a duet", next: "sora_duet", check: "performance", dc: 13, icon: "\u{1F3B5}" },
+      { text: "\"You already answered us — back at the entrance.\"", next: "sora_reached", condition: (inv) => inv.includes("Answered Echo"), icon: "\u{1F3B6}" },
+    ],
+  },
+
+  sora_reached: {
+    title: "What She Misses",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 10) {
+        return {
+          text: `${name} doesn't ask Sora to sing. Doesn't mention the Concord. Instead:
+
+"When did you last eat with someone?"
+
+Sora blinks.
+
+${name} is already unpacking — travel bread, dried fruit, a flask of tea. Devon produces a painted wooden bowl from the pack, sets it on the stone between them.
+
+${result.charId === "devon"
+  ? "Devon taps the bowl's rim. It hums — the cave's dead acoustics suddenly alive in this small, painted circle. The sound is warm."
+  : `Devon sets the bowl gently. "It hums when you tap the rim," ${name === "Devon" ? "they say" : "Devon says"}.`}
+
+Sora stares at the bowl. Taps it. The hum fills the chamber.
+
+Her eyes are wet. "That's a C-sharp. The cave's natural resonance. How did you—"
+
+Devon: "I didn't know. I just thought you might want to eat with people."
+
+Sora eats. Slowly. The bowl hums between bites. Nobody talks about the Concord until she does.
+
+"...You said Kenji's here?"
+
+Kenji waves from the entrance. His hands are shaking, but he's smiling.
+
+"Five of five," Sora says. "That's the chord."`,
+          choices: [
+            { text: "Welcome her to the quest", next: "sora_joins", icon: "\u{2694}️" },
+          ],
+        };
+      } else {
+        return {
+          text: `${name} tries the gentle approach, but Sora isn't ready for gentle. She's been alone too long. Kindness from strangers reads as pity.
+
+"I said no." Firmer now.
+
+But she's looking at the bowl. At the food. At the doorway where Kenji stands.
+
+Rachael catches Devon's eye. There might be another way.`,
+          choices: [
+            { text: "Rachael — try a duet instead", next: "sora_duet", check: "performance", dc: 13, icon: "\u{1F3B5}" },
+          ],
+        };
+      }
+    },
+  },
+
+  sora_duet: {
+    title: "The Imperfect Duet",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 13) {
+        return {
+          text: `${name} sits down across from Sora and starts humming. Badly. Deliberately, obviously badly — a pattern-rhythm with the timing wrong, the intervals off.
+
+Sora twitches. Her jaw tightens.
+
+${name} keeps going. Worse now. A tritone where there should be a fourth. A rushed beat where there should be a rest.
+
+"STOP." Sora's voice cracks the silence of the caves like a bell. "That's not — you're — the interval is a FOURTH, not a—"
+
+She's singing. Correcting. Her voice fills the chamber and the caves WAKE UP — echoes cascading through passages, harmonics building on harmonics. The phosphorescent moss pulses brighter.
+
+She stops. Stares at ${name}.
+
+"You did that on purpose."
+
+${result.charId === "rachael" ? `"Bard trick," Rachael says. "You physically can't let a pattern stay broken."` : `Rachael grins. "Works every time."`}
+
+Sora's laugh echoes through three chambers. It's the most beautiful sound the caves have made in years.`,
+          choices: [
+            { text: "Welcome her to the quest", next: "sora_joins", icon: "\u{2694}️" },
+          ],
+        };
+      } else {
+        return {
+          text: `${name} tries humming — genuinely, not strategically. But the caves are dead, and the melody falls flat. Sora looks at the floor.
+
+"It's not the same without..." She trails off.
+
+But Devon is sitting by the bowl now, and the silence doesn't feel hostile anymore. Just sad.`,
+          choices: [
+            { text: "Devon — try the meal approach", next: "sora_reached", check: "persuasion", dc: 10, preferChar: "devon", icon: "\u{1F49B}" },
+          ],
+        };
+      }
+    },
+  },
+
+  sora_joins: {
+    title: "The Loom-Singer Returns",
+    text: null,
+    resolve: (_, inventory) => {
+      const hasTadashi = inventory.includes("Tadashi's Alliance");
+      let text = `Sora packs her camp with the efficiency of someone who's been waiting to leave. Pattern sheets, tuning stones, a small hand-loom that folds flat.
+
+"My voice needs the others," she says. "The patterns I sing are only complete when Hana's dyes anchor the color, Kenji's stitches fix the form, and Tadashi's index tells me what to sing next."
+
+She pauses. Looks at the party.
+
+"And Yuki's thread starts it all."
+
+Kenji shows her the Pattern Needle. Her eyes go wide.
+
+"You're really doing this. All five."
+
+Marcus: "All five."
+Jade: "We have a spreadsheet."
+Devon: "We have a plan."
+Rachael: "We have a quest."
+
+`;
+
+      if (hasTadashi) {
+        text += `With Tadashi already found, there's only one destination left: home.
+
+"Floridae," Tomoe says from the cave entrance. "The tide's with us."`;
+      } else {
+        text += `One master remains: Tadashi the Pattern-Keeper, holed up in the Archive Tower.
+
+And if Corso's agents are headed there too, time is short.`;
+      }
+
+      return {
+        text,
+        choices: hasTadashi
+          ? [{ text: "Set sail for Floridae", next: "return_voyage", icon: "\u{26F5}" }]
+          : [{ text: "Head to the Archive Tower", next: "tower_travel", icon: "\u{1F3DB}️" }],
+        addItems: ["Sora's Alliance", "Sora's Song"],
+      };
+    },
+  },
+
+  // ═══════════════════════════════════════
+  // ACT 2B — ARCHIVE TOWER (TADASHI / JADE)
+  // ═══════════════════════════════════════
+
+  tower_travel: {
+    title: "The Road to the Archive Tower",
+    text: `The Archive Tower rises from a hill at the peninsula's center — a stone cylinder five stories tall, with smoke curling from the chimney stacks. Someone's home.
+
+The approach road is well-maintained. Too well-maintained for a recluse's hideout.
+
+Jade spots it first: fresh cart tracks. Multiple trips. Recent.
+
+"Someone's been hauling things out," she says. "Or in."
+
+As the party crests the hill, the picture clarifies. Two carts parked at the tower's base. Men carrying crates. A woman with a ledger, directing.
+
+Marcus: "Corso's people."
+Jade: "They're already inside."
+Devon: "They're copying the archives."
+
+The tower's main door is open. Guards at the entrance — but not many.`,
+    choices: [
+      { text: "Enter the tower", next: "tower_gates", icon: "\u{1F3DB}️" },
+    ],
+  },
+
+  tower_gates: {
+    title: "The Tower Gates",
+    text: `Three ways in. The main door has two guards — bored, not military. The tower has a service entrance on the north side, partially hidden by ivy. And somewhere inside, Tadashi is presumably barricaded with his archives.
+
+Jade's fingers twitch toward her tools.
+Marcus is sizing up the guards.
+Devon is worried about Tadashi.`,
+    choices: [
+      { text: "Sneak in through the service entrance", next: "tower_sneak", check: "stealth", dc: 13, preferChar: "jade", icon: "\u{1F90F}" },
+      { text: "Walk in as visiting scholars", next: "tower_bluff", check: "deception", dc: 12, icon: "\u{1F393}" },
+      { text: "Intercept the courier at the postern", next: "tower_courier", condition: (inv) => inv.includes("Corso Timetable"), icon: "\u{1F4E8}" },
+    ],
+  },
+
+  tower_sneak: {
+    title: "The Service Entrance",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 13) {
+        return {
+          text: `${name} slips through the ivy-covered service door and into the tower's east stairwell. Stone steps, dim light, the smell of old paper and lamp oil.
+
+On the second floor: Corso's agents, methodically copying pattern sheets. A woman dictates catalog numbers while two scribes copy. Their ledger sits on a side table — schedules, targets, shipping routes. Everything.
+
+${name} lifts the ledger. Smooth. Clean. The agents don't notice.
+
+${result.charId === "jade"
+  ? "Jade's flaw, for once, is an asset: she trusts data over people, and this ledger is ALL data."
+  : "Jade would be proud."}
+
+Up two more flights: a barricaded door. Tadashi's last stand.
+
+${name} signals the party through the service entrance. They arrive with evidence in hand.`,
+          choices: [
+            { text: "Approach Tadashi's barricade", next: "tower_stacks", icon: "\u{1F4DA}" },
+          ],
+          addItem: "Agent's Ledger",
+        };
+      } else {
+        return {
+          text: `${name} makes it through the service door but a floorboard creaks on the stairs. An agent pokes his head out.
+
+"Hey — who are you?"
+
+${name} bolts up the stairwell. The agent follows for one flight, then gives up — he's a scribe, not a guard. But the quiet approach is blown.
+
+The party enters loud. No ledger, but they reach the upper floors.
+
+Jade: "Suboptimal."
+Marcus: "We're in. That's optimal enough."`,
+          choices: [
+            { text: "Find Tadashi", next: "tower_stacks", icon: "\u{1F4DA}" },
+          ],
+        };
+      }
+    },
+  },
+
+  tower_bluff: {
+    title: "Visiting Scholars",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 12) {
+        return {
+          text: `${name} adjusts their posture, straightens their gear, and approaches the guards with academic confidence.
+
+"We're here for the Coastal Textile Heritage survey. Professor Liz sent us."
+
+The guards look at each other. "Nobody told us about a survey."
+
+"Nobody told you about the agents copying the archives either, and here they are," ${name} says pleasantly.
+
+That lands. The guards wave the party through with grumbles about their employer not telling them anything.
+
+Inside, the party bypasses the scribes on the second floor and heads straight up.`,
+          choices: [
+            { text: "Find Tadashi upstairs", next: "tower_stacks", icon: "\u{1F4DA}" },
+          ],
+        };
+      } else {
+        return {
+          text: `"Scholars?" The guard looks at Marcus's build, Jade's tools, Devon's worried expression, and Rachael's collection of... everything.
+
+"Right. Scholars. Move along."
+
+He points them to the wrong entrance — the public reading room on the first floor, which is locked and empty. By the time the party finds the real stairwell, they've lost twenty minutes.
+
+But they're in.`,
+          choices: [
+            { text: "Find Tadashi", next: "tower_stacks", icon: "\u{1F4DA}" },
+          ],
+        };
+      }
+    },
+  },
+
+  tower_courier: {
+    title: "The Courier Intercept",
+    text: `Jade's intelligence from the northern port pays off. The party knows exactly when and where Corso's courier is arriving with fresh orders — the north postern, mid-afternoon.
+
+They wait. The courier arrives with a satchel and a sealed letter. Jade intercepts cleanly — the courier thinks she's the contact.
+
+"Delivery for the tower operation. Here's the manifest."
+
+The satchel contains the agents' operational ledger — schedules, targets, the full scope of Corso's archive theft.
+
+Marcus: "This is everything."
+Jade: "Intel converts to evidence."
+Devon: "Can we also stop the actual theft?"
+
+The party enters through the postern. The scribes on the second floor don't even look up as they pass.`,
+    choices: [
+      { text: "Find Tadashi upstairs", next: "tower_stacks", icon: "\u{1F4DA}" },
+    ],
+    addItem: "Agent's Ledger",
+  },
+
+  tower_stacks: {
+    title: "The Pattern Archive",
+    text: `The top floor of the tower is a single circular room stacked floor to ceiling with pattern books, catalog indexes, pressed fabric samples, and hand-drawn schematics. A life's work.
+
+In the center, behind a barricade of bookshelves: Tadashi. An old man with reading glasses and ink-stained fingers, surrounded by ledgers of his own. He's been cataloging everything Corso's agents HAVEN'T gotten to yet — encrypting the indexes so the stolen copies are useless without his key.
+
+"You're not Corso's people," he says, peering over the barricade. "You don't have the right shoes."
+
+"We're from the Weavers' Concord," Rachael says.
+
+"The Concord is dead."
+
+"No. Yuki, Hana, and Kenji are alive. We're here for you."
+
+He looks interested but unconvinced. The catalog index on his desk is covered in cipher — a substitution code layered over a transposition grid. His life's work, encrypted against theft.
+
+"Prove you can carry what I've built. Crack the cipher. Otherwise, these patterns stay locked in my head and die with me."`,
+    choices: [
+      { text: "Jade — crack the index cipher", next: "tadashi_won", check: "investigation", dc: 12, preferChar: "jade", icon: "\u{1F50D}" },
+      { text: "Rachael — read it as arcana notation", next: "tadashi_arcana", check: "arcana", dc: 14, icon: "\u{2728}" },
+      { text: "Show him Kenji's Pattern Needle", next: "tadashi_won", condition: (inv) => inv.includes("Kenji's Pattern Needle"), icon: "\u{1FA61}" },
+    ],
+  },
+
+  tadashi_won: {
+    title: "The Cipher Breaks",
+    text: null,
+    resolve: (result) => {
+      if (!result) {
+        return {
+          text: `Rachael produces the Pattern Needle — Kenji's guild credential. Tadashi's hands go to his mouth.
+
+"That's... that's Kenji's seat. His SEAT at the table."
+
+He takes the needle. Studies the guild mark. Sets it down very carefully.
+
+"If Kenji trusts you enough to give you this, then the cipher doesn't matter. You've already proven you can carry what we've built."
+
+He begins unlocking his catalog. The real one, underneath the encrypted version.
+
+"Help me pack. We're leaving — and we're taking everything Corso hasn't copied yet."
+
+Jade is already organizing crates by catalog number. She didn't ask for help. Tadashi notices.
+
+"You," he says to Jade. "You organize like an archivist."
+Jade: "I organize like someone who's efficient."
+Tadashi: "Same thing."`,
+          choices: [
+            { text: "Welcome him to the quest", next: "tadashi_joins", icon: "\u{2694}️" },
+          ],
+        };
+      }
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 12) {
+        return {
+          text: `${name} studies the cipher. Substitution layer — got it. Transposition grid — the key is...
+
+"I need a hint," ${name} says. "The grid key. Is it numeric or semantic?"
+
+Tadashi raises an eyebrow. "You're ASKING?"
+
+${result.charId === "jade"
+  ? "Jade pauses. Asking for help. Her flaw, bending. \"Yes. I'm asking.\"\n\nTadashi smiles. \"Semantic. Based on the five masters' specialties, in founding order.\""
+  : `"Yes," ${name} says. "This is your system. I can crack the structure, but the meaning is yours."\n\nTadashi smiles. "Semantic. Based on the five masters' specialties, in founding order."`}
+
+Thread. Dye. Stitch. Song. Pattern. T-D-S-S-P.
+
+${name} unlocks the index in three minutes.
+
+Tadashi stares at the decoded page. Then at ${name}. Then at the party.
+
+"You can carry it. Pack everything."`,
+          choices: [
+            { text: "Welcome him to the quest", next: "tadashi_joins", icon: "\u{2694}️" },
+          ],
+        };
+      } else {
+        return {
+          text: `${name} works the cipher for twenty minutes. The substitution layer yields, but the transposition grid is keyed to something personal — domain knowledge ${name} doesn't have.
+
+"I can see the structure," ${name} says, "but I can't break the last layer without context."
+
+Tadashi watches. Almost convinced — the effort matters, even incomplete.`,
+          choices: [
+            { text: "Rachael — try reading it as arcana notation", next: "tadashi_arcana", check: "arcana", dc: 14, icon: "\u{2728}" },
+            { text: "Show him Kenji's Pattern Needle", next: "tadashi_won", condition: (inv) => inv.includes("Kenji's Pattern Needle"), icon: "\u{1FA61}" },
+          ],
+        };
+      }
+    },
+  },
+
+  tadashi_arcana: {
+    title: "Pattern as Spell",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 14) {
+        return {
+          text: `${name} looks at the cipher sideways. Not as code. As notation — like spell components, like recipe steps, like weaving instructions.
+
+"This isn't encrypted. It's WRITTEN IN CRAFT. The substitution layer is dye shorthand. The transposition grid is a weaving draft."
+
+Tadashi's jaw drops.
+
+"No one has ever read it that way. Not even Sora."
+
+"I'm not Sora," ${name} says. "But I read patterns."
+
+The index opens. Tadashi laughs — a dry, creaking sound, like a book being opened after years on a shelf.
+
+"Pack. Everything. And someone help me carry the heavy ones."`,
+          choices: [
+            { text: "Welcome him to the quest", next: "tadashi_joins", icon: "\u{2694}️" },
+          ],
+        };
+      } else {
+        return {
+          text: `${name} sees the craft notation beneath the cipher — partially. The dye shorthand makes sense, but the weaving-draft transposition requires knowledge of specific loom configurations ${name} doesn't have.
+
+"I can see it's craft, not code," ${name} says. "But I can't read this particular dialect."
+
+Close. But not enough. Tadashi isn't impressed by close.`,
+          choices: [
+            { text: "Jade — try cracking it as pure cipher", next: "tadashi_won", check: "investigation", dc: 12, preferChar: "jade", icon: "\u{1F50D}" },
+            { text: "Show him Kenji's Pattern Needle", next: "tadashi_won", condition: (inv) => inv.includes("Kenji's Pattern Needle"), icon: "\u{1FA61}" },
+          ],
+        };
+      }
+    },
+  },
+
+  tadashi_joins: {
+    title: "The Pattern-Keeper Joins",
+    text: null,
+    resolve: (_, inventory) => {
+      const hasSora = inventory.includes("Sora's Alliance");
+      let text = `Tadashi packs methodically — the most important pattern books first, then the indexes, then the fabric samples. The party helps. Marcus carries the heavy crates. Jade organizes. Devon makes sure Tadashi eats something.
+
+Corso's agents on the second floor don't interfere — they're scribes, and when they see the party's numbers and purpose, they quietly pack up too.
+
+"Tell Corso his copies are incomplete," Tadashi calls down the stairwell. "And always will be."
+
+At the tower gates, Tadashi turns back once. His life's work, half-emptied. Then he faces forward.
+
+"The patterns exist to be USED. Not archived. Not copied. Woven."
+
+`;
+
+      if (hasSora) {
+        text += `With Sora already found, there's only one destination: home.
+
+"Floridae," Rachael says. "It's time to finish this."`;
+      } else {
+        text += `One master remains: Sora the Loom-Singer, somewhere in the Singing Caves.
+
+Kenji: "She'll need convincing. She always does."`;
+      }
+
+      return {
+        text,
+        choices: hasSora
+          ? [{ text: "Set sail for Floridae", next: "return_voyage", icon: "\u{26F5}" }]
+          : [{ text: "Head to the Singing Caves", next: "caves_travel", icon: "\u{1F3B5}" }],
+        addItems: ["Tadashi's Alliance", "Master Patterns"],
+      };
+    },
+  },
+
+  // ═══════════════════════════════════════
+  // ACT 3 — THE HEARING
+  // ═══════════════════════════════════════
+
+  return_voyage: {
+    title: "The Return",
+    text: `The Painted Shuttle cuts south, heavy with cargo — Tadashi's archives, Sora's pattern sheets, Kenji's embroidery frames. The hold looks like a museum exhibit.
+
+The five masters haven't been in the same room in years. On the deck, they orbit each other — tentative, raw. Yuki and Hana have been waiting at Floridae. Kenji, Sora, and Tadashi are about to see them for the first time since the Concord broke.
+
+Tomoe brings news from shore: "Corso moved fast. The Merchant Council is holding an emergency vote — a ban on independent artisans operating outside licensed workshops."
+
+Marcus: "That kills the Concord before it re-forms."
+
+Tomoe: "But there's a counter-motion. A Cultural Preservation Hearing. Filed by Hana."
+
+Jade: "She's been fighting this in council chambers while we were on the road."
+
+Devon: "Smart. Legal protection before the guild reforms."
+
+The vote and the hearing are the same day. Tomorrow.
+
+Liz, from somewhere: "Midterm."
+Devon: "WHAT?"
+Liz: "Just kidding. But the hearing IS your final exam. Don't fail."`,
+    choices: [
+      { text: "Prepare for the hearing", next: "hearing_hall", icon: "\u{1F3DB}️" },
+    ],
+  },
+
+  hearing_hall: {
+    title: "The Merchant Council Hearing",
+    text: `The council chamber is formal — tiered benches, a magistrate's desk, guild banners on the walls. It smells of old wood and politics.
+
+On one side: Corso, flanked by lawyers and workshop owners. Confident. Well-funded.
+
+On the other: your party. Four students, three newly-recovered masters, and two allies who've been holding the line.
+
+At the magistrate's desk: Councilwoman Maren. Silver-haired, sharp-eyed, visibly skeptical of both sides. She's the swing vote — and the only council member who hasn't taken Corso's money or the guild's nostalgia at face value.
+
+"This hearing will determine whether independent artisan operations are protected under the Cultural Heritage Act or subject to the Workshop Licensing Ordinance. Both sides may present."
+
+Corso goes first. Numbers. Efficiency. "Progress."
+
+Your turn.`,
+    choices: [
+      { text: "Present the Agent's Ledger as evidence", next: "hearing_evidence", condition: (inv) => inv.includes("Agent's Ledger"), icon: "\u{1F4DC}" },
+      { text: "Rachael addresses the council directly", next: "hearing_speech", check: "persuasion", dc: 13, icon: "\u{1F399}️" },
+      { text: "Live demonstration — five masters, one pattern", next: "hearing_demo", check: "performance", dc: 12, icon: "\u{1F3AD}" },
+    ],
+  },
+
+  hearing_evidence: {
+    title: "The Evidence",
+    text: `Jade steps forward and presents the Agent's Ledger. Dates. Names. Shipping routes. A systematic operation to steal, copy, and commodify the Concord's techniques.
+
+The council chamber goes quiet.
+
+Corso's lawyers scramble. "That document was obtained—"
+
+"Through standard investigation," Jade says. "Every page is in your agents' handwriting."
+
+Councilwoman Maren reads three pages. Sets the ledger down.
+
+"Mr. Corso. Your representatives were copying proprietary pattern archives under false pretenses while simultaneously lobbying to ban the artisans whose work they were stealing."
+
+Corso's confidence cracks. His lawyers are whispering urgently.
+
+Maren: "The council will hear the rest of the petitioners' case, but I think the direction is clear."
+
+The evidence doesn't just counter Corso's argument. It destroys it.`,
+    choices: [
+      { text: "Press the advantage", next: "corso_cornered", icon: "\u{2694}️" },
+    ],
+    addItem: "Council's Favor",
+  },
+
+  hearing_speech: {
+    title: "Rachael's Address",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 13) {
+        return {
+          text: `${name} stands. The council chamber is silent.
+
+${result.charId === "rachael"
+  ? `"I know what undervaluing craft looks like. I've done it to myself."
+
+The room shifts. Maren leans forward.
+
+"I'm an artificer who undercharges for services. I know what it feels like when someone tells you your work isn't worth what you're asking — because part of you believes them."
+
+She looks at Corso. "You're not offering progress. You're offering a world where nobody has to be good at anything, because machines and templates do it instead. And that world is cheaper. But it's empty."
+
+She turns to Maren. "The Weavers' Concord isn't asking for charity. They're asking for the right to exist. To practice techniques that took lifetimes to develop. To teach. To make things that can't be templated."
+
+She sits down. Devon is crying quietly. Marcus is pretending he isn't.`
+  : `${name} speaks about craft, about value, about what's lost when efficiency replaces mastery. The words land — not perfectly, but honestly.`}
+
+Maren nods slowly. The council murmurs.`,
+          choices: [
+            { text: "The council turns", next: "corso_cornered", icon: "\u{2694}️" },
+          ],
+          addItem: "Council's Favor",
+        };
+      } else {
+        return {
+          text: `${name} speaks well — but the council is political, and good words aren't enough without proof or spectacle. Maren listens, nods, but doesn't commit.
+
+"Compelling. But the council needs more than philosophy."
+
+Corso's lawyers are regaining confidence. Time for a different approach.`,
+          choices: [
+            { text: "Live demonstration — let the masters speak through craft", next: "hearing_demo", check: "performance", dc: 12, icon: "\u{1F3AD}" },
+          ],
+        };
+      }
+    },
+  },
+
+  hearing_demo: {
+    title: "The Demonstration",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 12) {
+        return {
+          text: `The five masters take the floor.
+
+Yuki spins thread from raw fiber — right there, in the council chamber. Hana dyes it with pigments she mixed that morning. Kenji takes the colored thread and, hands trembling but guided by Sora's voice, begins to embroider a pattern that Tadashi calls from the master index.
+
+Five techniques. One fabric. In real time.
+
+The council watches a textile appear from nothing — thread to dye to stitch to pattern to song — each step impossible without the others.
+
+Maren stands. She's holding the finished piece — a square of fabric that shouldn't exist. Colors that shift in the light. A pattern that seems to move.
+
+"This cannot be templated," she says. "This cannot be copied. This is why heritage law exists."
+
+Corso's bench is empty. He left during the demonstration.
+
+The council doesn't need to vote. But they do anyway. Unanimous.`,
+          choices: [
+            { text: "The Concord is protected", next: "corso_cornered", icon: "\u{2694}️" },
+          ],
+          addItem: "Council's Favor",
+        };
+      } else {
+        return {
+          text: `The masters begin their demonstration, but the council chamber isn't a workshop. The acoustics are wrong for Sora. The light is wrong for Hana's dyes. Kenji's hands shake harder under scrutiny.
+
+The fabric they produce is good. Not transcendent. Good.
+
+Maren: "Impressive. But the council's decision requires more than a craft show."
+
+The vote will be close. But the effort wasn't wasted — the council saw five people working as one. That image stays.`,
+          choices: [
+            { text: "Face Corso with what you have", next: "corso_cornered", icon: "\u{2694}️" },
+          ],
+        };
+      }
+    },
+  },
+
+  corso_cornered: {
+    title: "Corso",
+    text: null,
+    resolve: (_, inventory) => {
+      const hasFavor = inventory.includes("Council's Favor");
+      let text = "";
+
+      if (hasFavor) {
+        text = `The hearing is over. The Cultural Heritage Act will protect independent artisans. The Workshop Licensing Ordinance is dead.
+
+Corso stands outside the council chamber. Alone — his lawyers have left, his allies have distanced themselves. He looks smaller without the apparatus of power.
+
+Devon's words from Chapter One echo: "He's scared. People who do this are always scared of the real thing."
+
+Devon was right. Corso built a machine to copy what he couldn't create. And the machine just lost.`;
+      } else {
+        text = `The hearing ends without a clear winner. The vote is split. But Councilwoman Maren casts the deciding vote for the Cultural Heritage Act — narrowly.
+
+"This council exists to protect Floridae's heritage," she says. "Not to regulate it out of existence."
+
+Corso is outside. His operation isn't destroyed, but it's constrained. The artisans are protected — barely.
+
+He looks angry. Dangerous, maybe.`;
+      }
+
+      text += `\n\nThe question now: what to do with him.`;
+
+      return {
+        text,
+        choices: [
+          { text: "Offer Corso a seat at the table — as distributor", next: "corso_redeem", check: "persuasion", dc: 12, preferChar: "devon", icon: "\u{1F91D}" },
+          { text: "Let the council deal with him", next: "corso_ruin", icon: "\u{2696}️" },
+        ],
+      };
+    },
+  },
+
+  corso_redeem: {
+    title: "The Merchant's Choice",
+    text: null,
+    resolve: (result) => {
+      const name = CHARACTERS[result.charId].name;
+      if (result.nat20 || result.total >= 12) {
+        return {
+          text: `${name} approaches Corso outside the chamber.
+
+"You're a good merchant. Your problem was never business — it was that you tried to BE the artisans instead of working WITH them."
+
+Corso stares.
+
+"The Concord needs distribution. Markets. Logistics. That's what you're actually good at. Not the copying — the connecting."
+
+${result.charId === "devon"
+  ? "Devon adds: \"You're scared. I get it. But the thing you're scared of — people being better at something than you — that's not a threat. It's a partnership.\""
+  : `Devon nods. "He's right. You don't have to be the threat."`}
+
+Corso looks at the council chamber. At the masters. At his empty bench.
+
+"...Distribution?"
+
+"On THEIR terms. Fair prices. Real craft. Your network, their art."
+
+A long pause. Then Corso extends his hand.
+
+"Contract. In writing. With council oversight."
+
+Maren, from the doorway: "I'll draft it myself."`,
+          choices: [
+            { text: "The Concord is whole", next: "ending_ch2", icon: "\u{2728}" },
+          ],
+          addItem: "Corso's Contract",
+        };
+      } else {
+        return {
+          text: `${name} makes the offer. Corso considers it — for one long moment, the anger in his face shifts to something else. Calculation. Maybe even interest.
+
+Then it closes.
+
+"I don't work FOR people. I work OVER them."
+
+He turns to leave. But Councilwoman Maren steps into his path.
+
+"Mr. Corso. The council has voted. Your workshop licenses are under review. You can accept the Concord's terms — distribution, fair pricing, council oversight — or you can fight the review. Which will take years."
+
+She produces a document. "I drafted this during the hearing. Sign, or litigate."
+
+Corso signs. Not happily. Not willingly. But he signs.
+
+Maren: "This isn't mercy, merchant. This is regulation."`,
+          choices: [
+            { text: "The Concord is whole", next: "ending_ch2", icon: "\u{2728}" },
+          ],
+          addItem: "Corso's Contract",
+        };
+      }
+    },
+  },
+
+  corso_ruin: {
+    title: "The Council's Judgment",
+    text: `Rachael shakes her head. "Let the system handle him."
+
+Councilwoman Maren doesn't hesitate. "Mr. Corso. The council finds your workshop in violation of the Cultural Heritage Act. Your guild license is revoked, effective immediately. Your inventory of copied patterns is forfeit."
+
+Corso's face goes white. Then red.
+
+"You think this ends me? I have agents in every port on the peninsula. Networks you can't touch with a council vote."
+
+He leaves. The door slams.
+
+Marcus: "That sounded like a threat."
+Jade: "It IS a threat. His agents are still out there."
+Devon: "But without him directing them..."
+Rachael: "They'll scatter. Or find a new handler."
+
+Maren overhears. "The council will deal with the network. You deal with the tapestry."
+
+A problem for Chapter Three. But for now: the Concord is free.`,
+    choices: [
+      { text: "The Concord is whole", next: "ending_ch2", icon: "\u{2728}" },
+    ],
+  },
+
+  ending_ch2: {
+    title: "The First Thread",
+    resolve: (_, inventory) => {
+      const hasContract = inventory.includes("Corso's Contract");
+      const items = inventory.length;
+
+      let text = `Sunset over Floridae. The fountain in the town square runs gold.\n\nFive masters. Four students. One captain. And a tapestry frame set up in Yuki's market stall, waiting for its first thread.\n\n`;
+
+      text += `Yuki takes the spool of starlight-thread — whether from Rachael's pack or her own sleeve — and feeds it through the first heddle.\n\n`;
+      text += `"One thread begins it," she says. "But it takes all of us to finish."\n\n`;
+      text += `Hana dips the shuttle in indigo. Kenji guides the first stitch. Sora hums — and the market stall's acoustics come alive, like the Singing Caves in miniature. Tadashi calls the pattern.\n\n`;
+      text += `The tapestry begins.\n\n`;
+
+      if (items >= 12) {
+        text += `Professor Liz's voice, warm: "A-minus."\n\nMarcus: "Why MINUS?"\n\nLiz: "Because perfect scores are suspicious and I'm a realist. But this..." A pause. "This is what the assignment was always about. Not the character sheets. Not the stats. The part where you look at a broken thing and decide to fix it together."\n\n`;
+      } else if (items >= 8) {
+        text += `Professor Liz's voice: "B-plus. Strong field work. Room for improvement."\n\nJade: "In WHAT?"\n\nLiz: "Self-care. Every one of you forgot to eat at least once."\n\nDevon: "That's... actually fair."\n\n`;
+      } else {
+        text += `Professor Liz's voice: "C-plus. But trending up. You found all five masters through sheer stubbornness."\n\nMarcus: "Stubbornness is an A-tier stat."\n\nLiz: "It is not."\n\n`;
+      }
+
+      if (hasContract) {
+        text += `Outside the market, Corso watches from across the square. Not as a threat — as a new partner, uncertain and uncomfortable. Maren's contract is in his coat pocket.\n\nDevon catches his eye and nods. Corso doesn't nod back. Not yet.\n\nBut he doesn't leave.\n\n`;
+      } else {
+        text += `Somewhere on the peninsula, Corso's agents scatter — a network without a handler. Some will find honest work. Some won't.\n\nA problem for another day.\n\n`;
+      }
+
+      text += `Liz, one last time: "The tapestry is your final exam. It's worth 100% of your grade."\n\n`;
+      text += `Devon: "OF WHICH CLASS?"\n\n`;
+      text += `Liz: "Yes."\n\n`;
+
+      text += `— QUEST LOG —\n`;
+      text += `✅ Kenji the Embroiderer — Allied (as teacher)\n`;
+      text += `✅ Sora the Loom-Singer — Allied\n`;
+      text += `✅ Tadashi the Pattern-Keeper — Allied\n`;
+      if (hasContract) {
+        text += `✅ Corso — Bound by contract (Maren's oversight)\n`;
+      } else {
+        text += `⚠️ Corso — Ruined, but agents at large\n`;
+      }
+      text += `\u{1F9F5} The tapestry has begun\n\n`;
+      text += `\u{1F4E6} ${inventory.join(", ")}\n\n`;
+      text += `— END OF CHAPTER TWO —\nThe Scattered Guild will continue...`;
+
+      return {
+        text,
+        choices: [
+          { text: "Play again", next: "ch2_intro", icon: "\u{1F504}", restart: true },
+        ],
+      };
+    },
+  },
+};
+
+// ——— UI COMPONENTS ———
+
+function PixelDie({ rolling, onClick, size = 5, result }) {
+  const [frame, setFrame] = useState(0);
+  const animRef = useRef(null);
+
+  useEffect(() => {
+    if (rolling) {
+      let f = 0;
+      animRef.current = setInterval(() => { f++; setFrame(f); }, 60);
+      return () => clearInterval(animRef.current);
+    } else {
+      if (animRef.current) clearInterval(animRef.current);
+    }
+  }, [rolling]);
+
+  const displayNum = rolling ? (Math.floor(Math.random() * 20) + 1) : (result?.d20 || "?");
+  const isNat20 = !rolling && result?.nat20;
+  const isNat1 = !rolling && result?.nat1;
+  const borderColor = isNat20 ? "#4a4" : isNat1 ? "#a44" : rolling ? "#c9b87b" : "#555";
+  const bgColor = isNat20 ? "#1a2e1a" : isNat1 ? "#2e1a1a" : "#111118";
+  const numColor = isNat20 ? "#4a4" : isNat1 ? "#a44" : rolling ? "#c9b87b" : "#888";
+
+  const shape = [
+    "...d.d.d...",
+    "..ddddddd..",
+    ".ddddddddd.",
+    "ddddddddddd",
+    "ddddddddddd",
+    "ddddddddddd",
+    "ddddddddddd",
+    ".ddddddddd.",
+    "..ddddddd..",
+    "...ddddd...",
+    "....ddd....",
+  ];
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: "inline-flex", flexDirection: "column", alignItems: "center",
+        cursor: onClick ? "pointer" : "default",
+        transform: rolling ? `rotate(${(frame * 37) % 360}deg)` : "rotate(0deg)",
+        transition: rolling ? "none" : "transform 0.3s ease-out",
+        userSelect: "none",
+      }}
+    >
+      <div style={{
+        position: "relative", width: 11 * size, height: 11 * size,
+        imageRendering: "pixelated",
+      }}>
+        {shape.map((row, y) => (
+          <div key={y} style={{ display: "flex" }}>
+            {row.split("").map((c, x) => (
+              <div key={x} style={{
+                width: size, height: size,
+                background: c === "d" ? bgColor : "transparent",
+                border: c === "d" ? `1px solid ${borderColor}22` : "none",
+                boxSizing: "border-box",
+              }} />
+            ))}
+          </div>
+        ))}
+        <div style={{
+          position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontFamily: "'Press Start 2P', monospace",
+          fontSize: size * 2.2,
+          color: numColor,
+          textShadow: `0 0 ${size}px ${numColor}44`,
+          pointerEvents: "none",
+        }}>
+          {displayNum}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SpotlightBanner({ type }) {
+  const isWin = type === "win";
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0,
+      padding: "12px", textAlign: "center", zIndex: 999,
+      background: isWin
+        ? "linear-gradient(90deg, #1a3a1a, #2a5a2a, #1a3a1a)"
+        : "linear-gradient(90deg, #3a1a1a, #5a2a2a, #3a1a1a)",
+      border: `3px solid ${isWin ? "#4a4" : "#a44"}`,
+      fontFamily: "'Press Start 2P', monospace",
+      fontSize: "14px",
+      color: isWin ? "#4a4" : "#a44",
+      textShadow: `0 0 20px ${isWin ? "#4a4" : "#a44"}`,
+      animation: "spotlightFlash 2s ease-out forwards",
+    }}>
+      {isWin ? "WINNER WINNER" : "EPIC FAIL"}
+      <div style={{ fontSize: "7px", color: "#888", marginTop: "4px" }}>
+        {isWin
+          ? "Liz: \"Show-off. A+.\""
+          : "Liz: \"I felt that from here. Extra credit for drama.\""}
+      </div>
+    </div>
+  );
+}
+
+function DiceRollPanel({ charId, skillName, dc, onRoll, result, rolling, isSpotlight }) {
+  const char = CHARACTERS[charId];
+  const stat = SKILL_STATS[skillName];
+  const mod = getMod(char.stats[stat]);
+  const prof = getProf(char.level);
+  const isProficient = char.skills.includes(skillName);
+  const bonus = mod + (isProficient ? prof : Math.floor(prof / 2));
+  const showSpotlightBanner = isSpotlight && result && (result.nat20 || result.nat1);
+
+  return (
+    <div style={{
+      margin: "16px 0", padding: "16px",
+      background: "#0a0a14",
+      border: isSpotlight ? "2px solid #c9b87b" : "2px solid #2a2a3a",
+      borderRadius: "4px", textAlign: "center",
+    }}>
+      {showSpotlightBanner && <SpotlightBanner type={result.nat20 ? "win" : "fail"} />}
+      {isSpotlight && (
+        <div style={{
+          fontFamily: "'Press Start 2P', monospace", fontSize: "6px",
+          color: "#c9b87b", marginBottom: "8px", letterSpacing: "2px",
+        }}>
+          SPOTLIGHT ROLL
+        </div>
+      )}
+      <div style={{
+        fontFamily: "'Press Start 2P', monospace", fontSize: "8px",
+        color: "#888", marginBottom: "12px",
+      }}>
+        <span style={{ color: char.color }}>{char.name}</span>
+        {" → "}
+        <span style={{ color: "#c9b87b" }}>{skillName}</span>
+        <span style={{ color: "#555" }}> (DC {dc})</span>
+      </div>
+
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        gap: "20px", marginBottom: "12px",
+      }}>
+        <PixelDie
+          rolling={rolling}
+          onClick={!result && !rolling ? onRoll : undefined}
+          size={5}
+          result={result}
+        />
+      </div>
+
+      {!result && !rolling && (
+        <div style={{
+          fontFamily: "'Press Start 2P', monospace", fontSize: "8px",
+          color: "#c9b87b", animation: "blink 1s infinite step-end",
+        }}>
+          ▶ CLICK TO ROLL ◀
+        </div>
+      )}
+      {rolling && (
+        <div style={{
+          fontFamily: "'Press Start 2P', monospace", fontSize: "7px", color: "#666",
+        }}>
+          rolling...
+        </div>
+      )}
+      {result && (
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "10px", marginTop: "4px" }}>
+          <span style={{ color: "#ccc" }}>d20: {result.d20}</span>
+          <span style={{ color: "#666" }}> + {bonus} = </span>
+          <span style={{
+            color: result.nat20 ? "#4a4" : result.nat1 ? "#a44" : (result.total >= dc ? "#8b8" : "#a88"),
+            fontWeight: "bold",
+          }}>
+            {result.total}
+            {result.nat20 ? "  NAT 20!" : result.nat1 ? "  CRIT FAIL!" : result.total >= dc ? "  PASS" : "  FAIL"}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiceResultBadge({ result }) {
+  if (!result) return null;
+  const char = CHARACTERS[result.charId];
+  return (
+    <div style={{
+      margin: "8px 0", padding: "6px 10px", display: "inline-block",
+      background: result.nat20 ? "#1a2e1a" : result.nat1 ? "#2e1a1a" : "#111118",
+      border: `2px solid ${result.nat20 ? "#4a8c4a" : result.nat1 ? "#8c4a4a" : "#2a2a3a"}`,
+      fontFamily: "'Press Start 2P', monospace", fontSize: "8px",
+    }}>
+      <span style={{ color: char?.color || "#aaa" }}>{char?.name}</span>
+      <span style={{ color: "#666" }}> {result.skillName} </span>
+      <span style={{ color: result.nat20 ? "#4a4" : result.nat1 ? "#a44" : "#aaa" }}>
+        {result.total}{result.nat20 ? " ★" : result.nat1 ? " ✗" : ""}
+      </span>
+    </div>
+  );
+}
+
+function PartyBar({ party, onSelect, selectedChar, compact }) {
+  return (
+    <div style={{
+      display: "flex", gap: compact ? "6px" : "10px",
+      padding: "8px", background: "#111118",
+      borderBottom: "2px solid #2a2a3a",
+      overflowX: "auto",
+    }}>
+      {party.map(id => {
+        const c = CHARACTERS[id];
+        return (
+          <div key={id} onClick={() => onSelect?.(id)} style={{
+            display: "flex", alignItems: "center", gap: "8px",
+            padding: "6px 10px", borderRadius: "4px", cursor: onSelect ? "pointer" : "default",
+            background: selectedChar === id ? "rgba(120,120,200,0.15)" : "transparent",
+            border: selectedChar === id ? `2px solid ${c.color}` : "2px solid transparent",
+            transition: "all 0.15s", minWidth: "fit-content",
+          }}>
+            <PixelSprite charId={id} size={compact ? 3 : 4} />
+            <div>
+              <div style={{
+                fontFamily: "'Press Start 2P', monospace", fontSize: "8px",
+                color: c.color, marginBottom: "2px",
+              }}>{c.name}</div>
+              <div style={{
+                fontFamily: "'Press Start 2P', monospace", fontSize: "6px",
+                color: "#666",
+              }}>HP {c.hp}/{c.maxHp}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PartyDetail({ party }) {
+  return (
+    <div style={{
+      display: "grid", gridTemplateColumns: "1fr 1fr",
+      gap: "8px", padding: "8px", maxWidth: "680px",
+    }}>
+      {party.map(id => {
+        const c = CHARACTERS[id];
+        return (
+          <div key={id} style={{
+            background: "#111118", border: `2px solid ${c.color}33`,
+            padding: "12px", borderRadius: "4px",
+          }}>
+            <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px" }}>
+              <PixelSprite charId={id} size={4} />
+              <div>
+                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "10px", color: c.color }}>{c.name}</div>
+                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "7px", color: "#888" }}>
+                  Lvl {c.level} {c.title}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginBottom: "6px" }}>
+              {Object.entries(c.stats).map(([s, v]) => (
+                <div key={s} style={{
+                  background: "#0a0a12", padding: "3px 6px", borderRadius: "2px",
+                  fontFamily: "'Press Start 2P', monospace", fontSize: "7px", textAlign: "center",
+                  border: "1px solid #222",
+                }}>
+                  <div style={{ color: "#aaa" }}>{v}</div>
+                  <div style={{ color: "#555", fontSize: "6px" }}>{s}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: "6px",
+              color: "#666", lineHeight: 1.8,
+            }}>
+              Flaw: {c.flaw}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CharPicker({ party, skill, onPick }) {
+  return (
+    <div style={{
+      background: "#0a0a14", border: "2px solid #3a3a5a",
+      padding: "14px", borderRadius: "4px", margin: "12px 0",
+    }}>
+      <div style={{
+        fontFamily: "'Press Start 2P', monospace", fontSize: "9px",
+        color: "#aaa", marginBottom: "10px",
+      }}>
+        Who attempts the <span style={{ color: "#c9b87b" }}>{skill}</span> check?
+      </div>
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+        {party.map(id => {
+          const c = CHARACTERS[id];
+          const stat = SKILL_STATS[skill];
+          const mod = getMod(c.stats[stat]);
+          const prof = getProf(c.level);
+          const isProficient = c.skills.includes(skill);
+          const bonus = mod + (isProficient ? prof : Math.floor(prof / 2));
+          return (
+            <button key={id} onClick={() => onPick(id)} style={{
+              background: "#151520", border: `2px solid ${c.color}55`,
+              padding: "10px 14px", borderRadius: "4px", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: "8px",
+              transition: "border-color 0.15s",
+            }}
+            onMouseOver={e => e.currentTarget.style.borderColor = c.color}
+            onMouseOut={e => e.currentTarget.style.borderColor = c.color + "55"}
+            >
+              <PixelSprite charId={id} size={3} />
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "8px", color: c.color }}>{c.name}</div>
+                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "7px", color: isProficient ? "#8b8" : "#888" }}>
+                  +{bonus} {isProficient ? "★" : ""}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ——— MAIN ———
+export default function Game() {
+  const [sceneId, setSceneId] = useState("ch2_intro");
+  const [inventory, setInventory] = useState([]);
+  const [displayedText, setDisplayedText] = useState("");
+  const [resolvedScene, setResolvedScene] = useState(null);
+  const [rollResult, setRollResult] = useState(null);
+  const [showChoices, setShowChoices] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [pickingChar, setPickingChar] = useState(null);
+  const [pendingChoice, setPendingChoice] = useState(null);
+  const [dicePhase, setDicePhase] = useState(null);
+  const [diceCharId, setDiceCharId] = useState(null);
+  const [diceDc, setDiceDc] = useState(0);
+  const [diceSkill, setDiceSkill] = useState(null);
+  const [diceIsSpotlight, setDiceIsSpotlight] = useState(false);
+  const intervalRef = useRef(null);
+  const checkedResolveRef = useRef(null);
+  const party = ["rachael", "marcus", "jade", "devon"];
+
+  const scene = SCENES[sceneId];
+
+  function typeText(text, onDone) {
+    let i = 0;
+    setDisplayedText("");
+    setIsTyping(true);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      i += 3;
+      if (i >= text.length) {
+        setDisplayedText(text);
+        setIsTyping(false);
+        clearInterval(intervalRef.current);
+        onDone?.();
+      } else {
+        setDisplayedText(text.slice(0, i));
+      }
+    }, 10);
+  }
+
+  useEffect(() => {
+    setShowChoices(false);
+    setPickingChar(null);
+    setPendingChoice(null);
+    setDicePhase(null);
+    setDiceCharId(null);
+    setDiceSkill(null);
+    setDiceIsSpotlight(false);
+
+    if (checkedResolveRef.current) {
+      const preResolved = checkedResolveRef.current;
+      checkedResolveRef.current = null;
+      setResolvedScene(preResolved);
+      const text = preResolved.text || "";
+      if (scene.addItem && !inventory.includes(scene.addItem)) {
+        setInventory(prev => prev.includes(scene.addItem) ? prev : [...prev, scene.addItem]);
+      }
+      if (scene.addItems) {
+        scene.addItems.forEach(item => {
+          if (!inventory.includes(item)) setInventory(prev => prev.includes(item) ? prev : [...prev, item]);
+        });
+      }
+      typeText(text, () => setShowChoices(true));
+      return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    }
+
+    setRollResult(null);
+
+    let resolved = null;
+    if (scene.resolve && !scene.choices?.some(c => c.check)) {
+      resolved = scene.resolve(null, inventory);
+      setResolvedScene(resolved);
+    } else {
+      setResolvedScene(null);
+    }
+
+    const text = resolved ? resolved.text : scene.text;
+
+    if (scene.addItem && !inventory.includes(scene.addItem)) {
+      setInventory(prev => prev.includes(scene.addItem) ? prev : [...prev, scene.addItem]);
+    }
+    if (scene.addItems) {
+      scene.addItems.forEach(item => {
+        if (!inventory.includes(item)) setInventory(prev => prev.includes(item) ? prev : [...prev, item]);
+      });
+    }
+    if (resolved?.addItem && !inventory.includes(resolved.addItem)) {
+      setInventory(prev => prev.includes(resolved.addItem) ? prev : [...prev, resolved.addItem]);
+    }
+    if (resolved?.addItems) {
+      resolved.addItems.forEach(item => {
+        if (!inventory.includes(item)) setInventory(prev => prev.includes(item) ? prev : [...prev, item]);
+      });
+    }
+
+    typeText(text || "", () => setShowChoices(true));
+
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [sceneId]);
+
+  const skipTyping = useCallback(() => {
+    if (isTyping) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      const text = resolvedScene ? resolvedScene.text : scene.text;
+      setDisplayedText(text || "");
+      setIsTyping(false);
+      setShowChoices(true);
+    }
+  }, [isTyping, resolvedScene, scene]);
+
+  const handleChoice = useCallback((choice) => {
+    if (choice.restart) {
+      setInventory([]);
+      setDicePhase(null);
+      setSceneId("ch2_intro");
+      return;
+    }
+    if (choice.condition && !choice.condition(inventory)) return;
+    if (choice.addItem && !inventory.includes(choice.addItem)) {
+      setInventory(prev => [...prev, choice.addItem]);
+    }
+    if (choice.addItems) {
+      choice.addItems.forEach(item => {
+        if (!inventory.includes(item)) setInventory(prev => [...prev, item]);
+      });
+    }
+
+    if (choice.check) {
+      if (choice.preferChar) {
+        prepareDice(choice, choice.preferChar);
+      } else {
+        setPendingChoice(choice);
+        setPickingChar(choice.check);
+        setShowChoices(false);
+      }
+    } else {
+      setSceneId(choice.next);
+    }
+  }, [inventory]);
+
+  function prepareDice(choice, charId) {
+    setPickingChar(null);
+    setPendingChoice(choice);
+    setDiceCharId(charId);
+    setDiceSkill(choice.check);
+    setDiceDc(choice.dc || 10);
+    setDiceIsSpotlight(choice.preferChar === charId);
+    setDicePhase("ready");
+    setShowChoices(false);
+    setRollResult(null);
+  }
+
+  function handleDiceClick() {
+    setDicePhase("rolling");
+
+    setTimeout(() => {
+      const result = rollFor(diceCharId, pendingChoice.check);
+      setRollResult(result);
+      setDicePhase("done");
+
+      const spotlightDelay = diceIsSpotlight && (result.nat20 || result.nat1) ? 2500 : 1200;
+
+      setTimeout(() => {
+        const choice = pendingChoice;
+        const nextScene = SCENES[choice.next];
+        if (nextScene.resolve) {
+          const resolved = nextScene.resolve(result, inventory);
+          setResolvedScene(resolved);
+          if (resolved.addItem && !inventory.includes(resolved.addItem)) {
+            setInventory(prev => prev.includes(resolved.addItem) ? prev : [...prev, resolved.addItem]);
+          }
+          if (resolved.addItems) {
+            resolved.addItems.forEach(item => {
+              if (!inventory.includes(item)) setInventory(prev => prev.includes(item) ? prev : [...prev, item]);
+            });
+          }
+          setDicePhase(null);
+          setPendingChoice(null);
+          setDiceCharId(null);
+          setDiceIsSpotlight(false);
+          checkedResolveRef.current = resolved;
+          setSceneId(choice.next);
+        } else {
+          setDicePhase(null);
+          setPendingChoice(null);
+          setDiceCharId(null);
+          setDiceIsSpotlight(false);
+          setTimeout(() => setSceneId(choice.next), 200);
+        }
+      }, spotlightDelay);
+    }, 800);
+  }
+
+  const currentChoices = resolvedScene?.choices || scene.choices || [];
+  const showPartyDetail = scene.showPartyDetail;
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "#0a0a12",
+      color: "#d4d0c8",
+      fontFamily: "'Press Start 2P', monospace",
+      imageRendering: "pixelated",
+    }}>
+      <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+
+      <div style={{
+        background: "#08080e", padding: "10px 14px",
+        borderBottom: "2px solid #1a1a2e",
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+      }}>
+        <div style={{ fontSize: "8px", color: "#c9b87b", letterSpacing: "1px" }}>
+          THE SCATTERED GUILD
+        </div>
+        <div style={{ fontSize: "6px", color: "#555" }}>
+          Ch.2 — The Concord's Voyage
+        </div>
+      </div>
+
+      <PartyBar party={party} compact />
+
+      {inventory.length > 0 && (
+        <div style={{
+          padding: "6px 14px", background: "#0c0c16",
+          borderBottom: "1px solid #1a1a2e", display: "flex",
+          gap: "6px", flexWrap: "wrap", alignItems: "center",
+        }}>
+          <span style={{ fontSize: "6px", color: "#555" }}>{"\u{1F4E6}"}</span>
+          {inventory.map((item, i) => (
+            <span key={i} style={{
+              fontSize: "6px", color: "#8a8a6a",
+              background: "#14141e", padding: "2px 6px",
+              border: "1px solid #2a2a3a", borderRadius: "2px",
+            }}>{item}</span>
+          ))}
+        </div>
+      )}
+
+      <div style={{ padding: "20px 16px", maxWidth: "700px" }}>
+        <h2 style={{
+          fontSize: "12px", color: "#c9b87b",
+          marginBottom: "16px", fontWeight: "normal",
+        }}>
+          {scene.title}
+        </h2>
+
+        <div
+          onClick={skipTyping}
+          style={{
+            fontSize: "10px", lineHeight: 2.2, whiteSpace: "pre-wrap",
+            cursor: isTyping ? "pointer" : "default",
+            minHeight: "100px", color: "#c8c4bc",
+            fontFamily: "'Press Start 2P', monospace",
+          }}
+        >
+          {displayedText}
+          {isTyping && <span style={{ color: "#c9b87b", animation: "blink 0.6s infinite step-end" }}>_</span>}
+        </div>
+
+        {showPartyDetail && showChoices && <PartyDetail party={party} />}
+
+        {rollResult && !dicePhase && <DiceResultBadge result={rollResult} />}
+
+        {pickingChar && !dicePhase && (
+          <CharPicker
+            party={party}
+            skill={pickingChar}
+            onPick={(charId) => prepareDice(pendingChoice, charId)}
+          />
+        )}
+
+        {dicePhase && diceCharId && (
+          <DiceRollPanel
+            charId={diceCharId}
+            skillName={diceSkill}
+            dc={diceDc}
+            onRoll={handleDiceClick}
+            result={dicePhase === "done" ? rollResult : null}
+            rolling={dicePhase === "rolling"}
+            isSpotlight={diceIsSpotlight}
+          />
+        )}
+
+        {showChoices && !pickingChar && !dicePhase && (
+          <div style={{
+            marginTop: "20px",
+            display: "flex", flexDirection: "column", gap: "6px",
+            maxWidth: "640px",
+          }}>
+            {currentChoices.map((choice, i) => {
+              if (choice.condition && !choice.condition(inventory)) return null;
+              return (
+                <button
+                  key={i}
+                  onClick={() => handleChoice(choice)}
+                  style={{
+                    background: "#111118",
+                    border: "2px solid #2a2a3a",
+                    padding: "12px 14px",
+                    color: "#c8c4bc",
+                    fontSize: "9px",
+                    fontFamily: "'Press Start 2P', monospace",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    lineHeight: 1.8,
+                    transition: "border-color 0.15s, background 0.15s",
+                  }}
+                  onMouseOver={e => {
+                    e.currentTarget.style.borderColor = "#c9b87b";
+                    e.currentTarget.style.background = "#16161e";
+                  }}
+                  onMouseOut={e => {
+                    e.currentTarget.style.borderColor = "#2a2a3a";
+                    e.currentTarget.style.background = "#111118";
+                  }}
+                >
+                  {choice.icon && <span style={{ marginRight: "8px" }}>{choice.icon}</span>}
+                  {choice.text}
+                  {choice.check && (
+                    <span style={{ color: "#666", fontSize: "7px", marginLeft: "8px" }}>
+                      [{choice.check}]
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes blink {
+          0%, 49% { opacity: 1; }
+          50%, 100% { opacity: 0; }
+        }
+        @keyframes spotlightFlash {
+          0% { opacity: 0; transform: scale(0.8); }
+          15% { opacity: 1; transform: scale(1.05); }
+          30% { transform: scale(1); }
+          80% { opacity: 1; }
+          100% { opacity: 0; transform: translateY(-20px); }
+        }
+        button:active { transform: scale(0.98); }
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0a12; }
+        ::-webkit-scrollbar-thumb { background: #2a2a3a; }
+      `}</style>
+    </div>
+  );
+}
